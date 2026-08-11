@@ -133,27 +133,50 @@ python3 tools/build_seed.py "/path/to/Personal CFO 2025 - UPDATED (May-Jul 2026)
 
 ## Statement parsing
 
-Two RBC layouts are supported, both built against real statements:
+Three RBC layouts are supported, handled by two parsers:
 
 - **`rbc-visa`** — a two-column page. The right-hand "IMPORTANT INFORMATION"
   sidebar is excluded by x-position; without that, the credit limit and minimum
   payment get read as charges.
-- **`rbc-bank`** — withdrawal versus deposit is encoded by *which column* a number
-  sits in, not by sign. Column positions are read off the header row and each
-  figure is assigned by matching right edges, since the numbers are right-aligned.
-  Wrapped descriptions and repeated page furniture are handled.
+- **`rbc-bank`** — covers both the **personal** account statement and the
+  **business** account statement. Withdrawal versus deposit is encoded by *which
+  column* a number sits in, not by sign, so column positions are read off the
+  header row and each figure is assigned by matching right edges (the figures are
+  right-aligned). The two statement types differ only in their labels —
+  `Withdrawals ($) / Deposits ($)` versus `Cheques & Debits ($) / Deposits &
+  Credits ($)` — and in printing the period without a "From" prefix. The business
+  statement also prints the date twice on some rows (posted and effective) and
+  shifts its whole table left on continuation pages.
 
-Both were verified against their own control totals — a Visa statement's parsed
-purchases matched its printed "Purchases & debits" of $19,656.37 exactly, and a
-bank statement's parsed withdrawals and deposits matched its printed $22,707.17
-and $50,000.01 exactly.
+### Verification
 
-To re-check a statement:
+Every parse is checked against the control totals the statement itself prints,
+which is the only check that actually proves a parser is right:
 
 ```bash
 npm i pdfjs-dist@4.6.82
-node tools/test-parsers.mjs rbc-bank ~/Downloads/statement.pdf
+node tools/reconcile.mjs rbc-bank ~/Downloads/statement.pdf
+node tools/reconcile.mjs rbc-visa  ~/Downloads/visa.pdf
 ```
+
+It exits non-zero on any mismatch. All 7 accounts have been reconciled exactly —
+amounts, and for business statements the transaction counts too:
+
+| Account | Statement | Debits | Credits |
+|---|---|---|---|
+| Rob Bank | 2026-07 | $22,707.17 | $50,000.01 |
+| Mel Bank | 2026-07 | $10,137.96 | $14,536.88 |
+| Daniko Bank | 2025-12 → 2026-04 (5) | exact, counts too | exact, counts too |
+| Rob Visa Personal | 2026-07 | $5,907.82 | $5,112.66 |
+| Melanie Personal Visa | 2026-07 | $115.32 | $3,000.00 |
+| Daniko Rob Visa | 2026-04 | $19,656.37 | $7,080.31 |
+| Daniko Mel Visa | 2026-07 | $0.00 | $29.38 |
+
+Note for Visa statements: the control total is `Purchases & debits` **plus**
+`Cash advances`, `Interest` and `Fees`. Interest and fees are real charges the
+parser picks up; RBC just accounts for them on separate lines. Melanie's July
+statement is the case that makes this visible — $0.00 of purchases but $115.32 of
+purchase interest.
 
 A statement in some other layout will parse to zero rows and say so rather than
 inventing data.
@@ -176,7 +199,8 @@ js/ui.js              view rendering
 js/app.js             orchestration
 data/seed.json        generated lookup table
 tools/build_seed.py   regenerates data/seed.json from the master workbook
-tools/test-parsers.mjs  parser check against a real PDF
+tools/test-parsers.mjs  quick parse dump for one PDF
+tools/reconcile.mjs   checks a parse against the statement's printed totals
 vendor/               Chart.js, SheetJS, pdf.js
 ```
 
@@ -184,13 +208,11 @@ vendor/               Chart.js, SheetJS, pdf.js
 
 ## Known limitations
 
-- **Melanie Personal Visa has no data.** The account is configured and its Drive
-  folders exist, but no statements have been uploaded, so it is flagged as missing
-  every cycle until they are.
-- **May–Jul 2026 is missing the three Daniko accounts**, matching the gap the PRD
-  describes. Month-over-month figures for those cycles carry the incomplete-comparison
-  caveat.
-- Only RBC statement layouts are supported.
+- Only RBC statement layouts are supported. Anything else parses to zero rows and
+  is reported, never silently skipped.
+- Reconciliation covers one statement per account (five for Daniko Bank). Other
+  months are assumed to share the layout; `tools/reconcile.mjs` re-checks any of
+  them in seconds if you want more coverage.
 - Acknowledged flags are per-browser and reset each cycle by design — acknowledging
   is not "fixed", and the flag returns if the underlying data still trips the rule.
 

@@ -74,9 +74,10 @@ function parsePeriod(text) {
       end: { month: endMonth, day: Number(m[4]), year: endYear },
     };
   }
-  // Bank: "From June 15, 2026 to July 15, 2026"
-  m = text.match(/From\s+([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})\s+to\s+([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})/i);
-  if (m) {
+  // Bank: "From June 15, 2026 to July 15, 2026" (personal) and
+  //       "January 30, 2026 to February 27, 2026" (business — no "From" prefix).
+  m = text.match(/(?:From\s+)?\b([A-Za-z]{3,9})\s+(\d{1,2}),\s*(\d{4})\s+to\s+([A-Za-z]{3,9})\s+(\d{1,2}),\s*(\d{4})/i);
+  if (m && MONTHS[m[1].slice(0, 3).toUpperCase()] && MONTHS[m[4].slice(0, 3).toUpperCase()]) {
     return {
       start: { month: MONTHS[m[1].slice(0, 3).toUpperCase()], day: Number(m[2]), year: Number(m[3]) },
       end: { month: MONTHS[m[4].slice(0, 3).toUpperCase()], day: Number(m[5]), year: Number(m[6]) },
@@ -162,12 +163,20 @@ const BANK_DATE = /^(\d{1,2})\s+([A-Za-z]{3})\b/;
 // carrying no numbers gets mistaken for a wrapped description and glued onto the
 // next transaction.
 const BANK_CHROME = [
-  /^From\s+[A-Za-z]+\s+\d{1,2},\s*\d{4}\s+to\s+/i,
+  /^(?:From\s+)?[A-Za-z]{3,9}\s+\d{1,2},\s*\d{4}\s+to\s+[A-Za-z]{3,9}\s+\d{1,2},\s*\d{4}/i,
   /Royal Bank of Canada/i,
   /^Details of your account/i,
   /^Summary of your account/i,
   /Your (account number|opening balance|closing balance|RBC personal)/i,
-  /^Total (deposits|withdrawals)/i,
+  /^Total (deposits|withdrawals|cheques|credits|debits)/i,
+  // Business Account Statement furniture.
+  /^Account (Activity|Summary|number|Fees)/i,
+  /^Business Account Statement/i,
+  /^Business Current Account/i,
+  /^Private Banking/i,
+  /^(Opening|Closing) balance/i,
+  /^Please contact your RBC/i,
+  /^RB[A-Z]+\d/i,
   /How to reach us/i,
   /rbcroyalbank|www\.rbc/i,
   /^Page \d+/i,
@@ -180,6 +189,16 @@ const BANK_CHROME = [
 ];
 
 const isBankChrome = (text) => BANK_CHROME.some((re) => re.test(text));
+
+// Column headers differ between RBC's personal and business statements:
+//   personal: "Withdrawals ($)   Deposits ($)          Balance ($)"
+//   business: "Cheques & Debits ($)  Deposits & Credits ($)  Balance ($)"
+// The geometry is identical in both — figures are right-aligned under their
+// header — so only the labels need to be recognised. These require the "($)"
+// suffix so ordinary description text can never be mistaken for a header.
+const DEBIT_COL = /(?:withdrawals?|cheques?\s*&\s*debits?|debits?)\s*\(\$\)/i;
+const CREDIT_COL = /(?:deposits?\s*&\s*credits?|deposits?|credits?)\s*\(\$\)/i;
+const BALANCE_COL = /balance\s*\(\$\)/i;
 
 function parseBank(pages) {
   const txns = [];
@@ -200,21 +219,25 @@ function parseBank(pages) {
       if (!period) period = parsePeriod(text);
       if (isBankChrome(text)) { flush(); continue; }
 
-      // Learn the numeric column positions from the table header.
-      if (/Withdrawals?\s*\(\$\)/i.test(text) && /Deposits?\s*\(\$\)/i.test(text)) {
+      // Learn the numeric column positions from the table header. The header
+      // repeats on every continuation page, so this re-learns per page — the
+      // business statement shifts its whole table left on page 2.
+      if (DEBIT_COL.test(text) && CREDIT_COL.test(text)) {
         const find = (re) => {
           const it = items.find((i) => re.test(i.str));
           return it ? it.right : null;
         };
         columns = {
-          withdrawal: find(/Withdrawals?/i),
-          deposit: find(/Deposits?/i),
-          balance: find(/Balance/i),
+          withdrawal: find(DEBIT_COL),
+          deposit: find(CREDIT_COL),
+          balance: find(BALANCE_COL),
         };
+        // Anything accumulated above the header is page furniture, not the
+        // start of the first transaction's description.
+        pending = null;
         continue;
       }
       if (!columns || !columns.withdrawal || !columns.deposit) continue;
-      if (/^(Opening Balance|Closing Balance|Details of your account)/i.test(text)) continue;
 
       const dateMatch = text.match(BANK_DATE);
       const numbers = items
@@ -222,13 +245,18 @@ function parseBank(pages) {
         .filter((i) => i.value !== null && /^[\d,]+\.\d{2}$/.test(i.raw.trim()));
 
       // Words that are not the date and not a number make up the description.
-      const words = items
+      // Some business-statement rows print the date twice (posted and effective,
+      // e.g. "03 Feb 03 Feb Interest AVE CAP-105"), so strip every leading date
+      // rather than just the first.
+      let words = items
         .filter((i) => !/^[\d,]+\.\d{2}$/.test(i.str.trim()))
         .map((i) => i.str)
         .join(' ')
-        .replace(BANK_DATE, '')
         .replace(/\s+/g, ' ')
         .trim();
+      for (let guard = 0; guard < 4 && BANK_DATE.test(words); guard += 1) {
+        words = words.replace(BANK_DATE, '').trim();
+      }
 
       if (dateMatch) {
         const month = MONTHS[dateMatch[2].slice(0, 3).toUpperCase()];

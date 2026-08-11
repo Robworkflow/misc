@@ -71,7 +71,7 @@ export const ACCOUNTS = [
     person: 'Mel',
     defaultSpendType: 'Personal',
     statementFormat: 'rbc-visa',
-    last4: null,
+    last4: '0784',
     match: ['mel personal visa', 'melanie personal visa'],
     folders: { 2025: '1B5_db5iRzuudZncULSWb4T9eWT7Ze3mx', 2026: '1dJ1k5kdTb1GD69NeHZtT3f3WBi0HHrLN' },
   },
