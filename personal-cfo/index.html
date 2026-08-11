@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Personal CFO — Guardrail Dashboard</title>
+<link rel="stylesheet" href="./css/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💳</text></svg>">
+</head>
+<body>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <h1>Personal CFO</h1>
+      <span class="sub">Guardrail dashboard · Rob &amp; Melanie · Daniko Management Ltd.</span>
+    </div>
+    <span class="spacer"></span>
+    <div id="status"></div>
+    <div class="cycle-pick">
+      <label for="cycle-select">Cycle</label>
+      <select id="cycle-select"></select>
+    </div>
+    <button class="btn" id="btn-settings">Settings</button>
+    <button class="btn" id="btn-connect">Connect Drive</button>
+  </header>
+
+  <div class="toolbar" style="margin-top:16px">
+    <button class="btn" id="btn-scan">Scan for new statements</button>
+    <button class="btn" id="btn-ingest" disabled>Ingest new statements</button>
+    <span class="spacer"></span>
+    <button class="btn" id="btn-email">Draft Melanie's summary</button>
+    <button class="btn btn-primary" id="btn-package">Generate update package</button>
+  </div>
+
+  <div id="banners"></div>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="overview" aria-selected="true">Overview</button>
+    <button class="tab" role="tab" data-tab="transactions" aria-selected="false">Transactions</button>
+    <button class="tab" role="tab" data-tab="flags" id="tab-flags" aria-selected="false">Flags <span class="count">0</span></button>
+    <button class="tab" role="tab" data-tab="subscriptions" aria-selected="false">Subscriptions</button>
+    <button class="tab" role="tab" data-tab="accounts" aria-selected="false">Accounts</button>
+    <button class="tab" role="tab" data-tab="merchants" aria-selected="false">Lookup table</button>
+  </nav>
+
+  <section class="panel" data-panel="overview"></section>
+  <section class="panel" data-panel="transactions" hidden></section>
+  <section class="panel" data-panel="flags" hidden></section>
+  <section class="panel" data-panel="subscriptions" hidden></section>
+  <section class="panel" data-panel="accounts" hidden></section>
+  <section class="panel" data-panel="merchants" hidden></section>
+</div>
+
+<dialog id="settings-dialog">
+  <form method="dialog">
+    <div class="dlg-head"><h3>Settings</h3></div>
+    <div class="dlg-body">
+      <label for="set-client-id">Google OAuth client ID</label>
+      <input type="text" id="set-client-id" placeholder="1234-abc.apps.googleusercontent.com" autocomplete="off">
+      <p class="hint" style="margin-top:6px">
+        A Web application OAuth client whose authorised JavaScript origin matches the address this page is served
+        from (e.g. <code>http://localhost:8000</code>). Only <code>drive.readonly</code> is requested — the app can
+        read your Drive files but cannot modify them.
+      </p>
+
+      <label for="set-master-id">Master workbook file ID</label>
+      <input type="text" id="set-master-id" autocomplete="off">
+      <p class="hint" style="margin-top:6px">The workbook is the system of record and is only ever read.</p>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn" id="settings-reset" value="reset">Reset ingest history</button>
+      <button class="btn" value="cancel">Cancel</button>
+      <button class="btn btn-primary" id="settings-save" value="save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="email-dialog">
+  <form method="dialog">
+    <div class="dlg-head">
+      <h3>Monthly summary for Melanie</h3>
+      <p class="hint" style="margin-top:4px">Draft only — nothing is sent. Copy it into your mail client when you're happy with it.</p>
+    </div>
+    <div class="dlg-body"><pre id="email-text"></pre></div>
+    <div class="dlg-foot">
+      <button class="btn" id="email-download" value="download">Download .txt</button>
+      <button class="btn" value="close">Close</button>
+      <button class="btn btn-primary" id="email-copy" value="copy">Copy to clipboard</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Libraries are vendored in ./vendor so the dashboard runs with no build step and
+     no third-party requests. Google Identity Services is the one remote script, and
+     it is only needed when you connect Drive. -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="./vendor/chart.umd.js"></script>
+<script src="./vendor/xlsx.full.min.js"></script>
+<script type="module">
+  import * as pdfjsLib from './vendor/pdf.min.mjs';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.mjs';
+  window.pdfjsLib = pdfjsLib;
+</script>
+<script type="module" src="./js/app.js"></script>
+</body>
+</html>
