@@ -13,6 +13,12 @@ export const DRIVE = {
     2026: '1nqIllG0t-TtFGaKRgSQx1px1JlDPogHV',
   },
   scope: 'https://www.googleapis.com/auth/drive.readonly',
+  // Default OAuth client for the browser flow. A client ID is not a secret — it is
+  // sent in the clear on every OAuth request — but it only works from an origin
+  // registered on the client, which for this one is http://localhost:8000.
+  // Serve the app on port 8000 or sign-in will fail with origin_mismatch.
+  // Settings overrides this value if you need a different client.
+  oauthClientId: '329588979883-o191q61plf1ua6u9navkk0c61cg49rss.apps.googleusercontent.com',
 };
 
 // The 7 tracked accounts. `match` drives discovery of the per-account statement

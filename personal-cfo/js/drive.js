@@ -18,7 +18,7 @@ export function isSignedIn() {
 }
 
 export function getClientId() {
-  return store.get('googleClientId', '');
+  return store.get('googleClientId', '') || DRIVE.oauthClientId || '';
 }
 
 /**

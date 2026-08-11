@@ -329,7 +329,7 @@ function wireEvents() {
 
   // Settings.
   $('#btn-settings').addEventListener('click', () => {
-    $('#set-client-id').value = store.get('googleClientId', '');
+    $('#set-client-id').value = drive.getClientId();
     $('#set-master-id').value = store.get('masterFileId', DRIVE.masterFileId);
     $('#settings-dialog').showModal();
   });
@@ -444,9 +444,14 @@ async function boot() {
     render();
   }
 
-  if (!store.get('googleClientId', '')) {
+  if (!drive.getClientId()) {
     banner('warn', 'Google Drive is not configured yet',
       'Add an OAuth client ID in Settings to read the statement folders and the master workbook. Everything else works offline against cached data.');
+  } else if (location.port !== '8000' && location.hostname === 'localhost') {
+    // The configured client only authorises http://localhost:8000. Catching this
+    // here is far clearer than Google's origin_mismatch error.
+    banner('warn', `Serving on port ${location.port || '80'}, not 8000`,
+      'The configured OAuth client only authorises http://localhost:8000, so Drive sign-in will fail with origin_mismatch. Restart with ./serve.sh 8000, or add this origin to the client in the Google Cloud console.');
   }
 }
 
