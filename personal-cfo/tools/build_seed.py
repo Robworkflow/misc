@@ -94,8 +94,13 @@ CURATED = [
     ("BUILDIUM",         "Buildium Property Mgmt", "Subscriptions", "Business", None,  True,  "monthly"),
     ("DOORLOOP",         "DoorLoop",               "Subscriptions", "Business", None,  True,  "annual"),
     ("LISTINGVIEW",      "ListingView.io",         "Subscriptions", "Business", None,  True,  "monthly"),
-    # --- subscriptions: telecom (PRD: was mistagged Home & Property) -----------
-    ("TELUS",            "Telus Mobility",         "Subscriptions", "Business", None,  True,  "monthly"),
+    # --- cellular (PRD: was mistagged Home & Property; later moved out of
+    # Subscriptions into its own Cellular category/guardrail — a phone bill
+    # behaves differently enough from a $10 app subscription to track separately)
+    ("TELUS",            "Telus Mobility",         "Cellular", "Business", None,  False, "monthly"),
+    # No Freedom Mobile, Rogers, Bell, Fido, Koodo or similar carrier strings
+    # exist anywhere in the current transaction history — checked directly, not
+    # assumed. Nothing to add here until one actually appears in a statement.
     # --- subscriptions: media / consumer --------------------------------------
     ("NETFLIX",          "Netflix",                "Subscriptions", "Personal", None,  True,  "monthly"),
     ("DISNEYPLUS",       "Disney Plus",            "Subscriptions", "Personal", None,  True,  "annual"),
@@ -290,6 +295,13 @@ BILLS = {
     "WAWANESA", "LLOYDS",
 }
 
+# Cell phone bills. A third recurringType, distinct from both 'subscription' and
+# 'bill': cellular gets its own MoM-jump guardrail (js/guardrails.js) with its own
+# burn total, separate from the Subscriptions number — a phone bill is a bigger,
+# more variable line than a $10 streaming app and deserves to be watched on its
+# own rather than diluting or being diluted by the subscription figure.
+CELLULAR = {"TELUS"}
+
 # Treasury movement between the household's own accounts and the business. These
 # are not spend; mapping them to Transfers keeps them out of every baseline.
 TRANSFER_PATTERNS = [
@@ -313,11 +325,11 @@ MIN_COUNT = 3
 MIN_CONFIDENCE = 0.70
 
 CATEGORIES = [
-    "Automotive", "Cottage & Recreation", "Dining & Food", "Entertainment",
-    "Fees & Interest", "Groceries & Market", "Health & Wellness",
-    "Home & Property", "Income", "Insurance", "Kids & Activities",
-    "Shopping & Clothing", "Subscriptions", "Taxes & Government",
-    "Transfers", "Transportation", "Travel",
+    "Automotive", "Business - Misc", "Cellular", "Cottage & Recreation",
+    "Dining & Food", "Entertainment", "Fees & Interest", "Groceries & Market",
+    "Health & Wellness", "Home & Property", "Income", "Insurance",
+    "Kids & Activities", "Shopping & Clothing", "Subscriptions",
+    "Taxes & Government", "Transfers", "Transportation", "Travel",
 ]
 
 # Canonicalise the "and" vs "&" spelling drift between the Rules sheet and the
@@ -419,6 +431,8 @@ def main():
     for pattern, display, category, spend, person, is_sub, cadence in CURATED:
         if pattern in BILLS:
             recurring = "bill"
+        elif pattern in CELLULAR:
+            recurring = "cellular"
         elif is_sub:
             recurring = "subscription"
         else:

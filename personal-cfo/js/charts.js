@@ -326,3 +326,61 @@ export function categoryVsBaselineChart(canvasId, breakdown) {
     },
   });
 }
+
+/**
+ * The Reports tab / email trend: spend over the selected range, one bar per
+ * day or month depending on the range's granularity (see reports.js). Income
+ * is drawn as its own line only when the report included it — it is never
+ * stacked into the spend bar, since the two are never meant to be added
+ * together.
+ */
+export function reportTrendChart(canvasId, trend, granularity) {
+  const labels = trend.map((p) => (granularity === 'day'
+    ? p.label.slice(5).replace(/^0/, '').replace('-', '/')
+    : shortMonth(p.label)));
+  const hasIncome = trend.some((p) => p.income > 0);
+
+  const datasets = [{
+    type: 'bar',
+    label: 'Spend',
+    data: trend.map((p) => p.spend),
+    backgroundColor: CHART_COLORS[0],
+    borderRadius: { topLeft: 3, topRight: 3 },
+    borderSkipped: false,
+    order: 2,
+  }];
+  if (hasIncome) {
+    datasets.push({
+      type: 'line',
+      label: 'Income',
+      data: trend.map((p) => p.income),
+      borderColor: STATUS.good,
+      backgroundColor: STATUS.good,
+      borderWidth: 2,
+      pointRadius: 2,
+      tension: 0.2,
+      order: 1,
+    });
+  }
+
+  return mount(canvasId, {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: (() => {
+        const s = baseScales();
+        if (trend.length > 20) s.x.ticks = { ...s.x.ticks, maxRotation: 0, autoSkipPadding: 16 };
+        return s;
+      })(),
+      plugins: {
+        legend: hasIncome ? legend : { display: false },
+        tooltip: tooltip({
+          callbacks: { label: (ctx) => `${ctx.dataset.label}: ${money(ctx.parsed.y)}` },
+        }),
+      },
+    },
+  });
+}

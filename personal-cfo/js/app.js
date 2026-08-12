@@ -10,10 +10,11 @@ import {
   allMerchantOverrides, diffMerchantOverrides, applyMerchantOverridesDiff,
   cacheTransactions, cachedTransactions,
 } from './store.js';
-import { compile, categorize, txnFingerprint } from './merchants.js';
+import { compile, categorize, txnFingerprint, personaFor } from './merchants.js';
 import { suggestAll, suggestCategory } from './suggest.js';
 import { parseStatement, parseMasterWorkbook } from './parse.js';
 import { evaluate, categoryTrend, categoryBreakdown, monthOf } from './guardrails.js';
+import { buildReport } from './reports.js';
 import * as drive from './drive.js';
 import * as charts from './charts.js';
 import * as ui from './ui.js';
@@ -42,6 +43,16 @@ const state = {
   newTransactions: [],
   activeTab: 'overview',
   filter: { q: '', account: '', category: '', scope: 'cycle', ruleQ: '' },
+  reportFilter: {
+    who: 'All',
+    category: 'All',
+    timeMode: 'monthly',
+    month: new Date().toISOString().slice(0, 7),
+    year: String(new Date().getFullYear()),
+    start: '',
+    end: '',
+    includeIncome: false,
+  },
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -81,11 +92,16 @@ function recategorize() {
     // Computed once here so the table and the engine agree on identity.
     const fingerprint = txnFingerprint(categorized);
     const override = state.spendOverrides[fingerprint];
+    const spendType = override || categorized.spendType;
     return {
       ...categorized,
       fingerprint,
-      spendType: override || categorized.spendType,
+      spendType,
       spendTypeSource: override ? 'user' : categorized.spendTypeSource,
+      // Derived, never stored separately — persona always follows the account
+      // and (for Daniko Rob Visa only) the resolved spend type above, so there
+      // is nothing here that can drift out of sync with a spend-type flip.
+      persona: personaFor(account, spendType),
     };
   });
 
@@ -136,6 +152,9 @@ function render() {
   } else if (tab === 'subscriptions') {
     ui.renderSubscriptions(panel, state);
     charts.subscriptionTrendChart('chart-sub-detail', state.result.subscriptions.series, THRESHOLDS.subscriptionMoMPct);
+  } else if (tab === 'reports') {
+    ui.renderReports(panel, state);
+    drawReportChart();
   } else if (tab === 'accounts') {
     ui.renderAccounts(panel, state);
   } else if (tab === 'merchants') {
@@ -152,6 +171,20 @@ function drawCharts() {
   charts.subscriptionTrendChart('chart-sub-trend', state.result.subscriptions.series, THRESHOLDS.subscriptionMoMPct);
   charts.categoryVsBaselineChart('chart-category-baseline', categoryBreakdown(state.transactions, state.cycle, state.reviewed));
   charts.accountChart('chart-accounts', state.result.coverage);
+}
+
+function drawReportChart() {
+  const rf = state.reportFilter;
+  const time = rf.timeMode === 'monthly' ? { mode: 'monthly', month: rf.month }
+    : rf.timeMode === 'yearly' ? { mode: 'yearly', year: rf.year }
+      : { mode: 'custom', start: rf.start, end: rf.end };
+  let report;
+  try {
+    report = buildReport(state.transactions, { who: rf.who, category: rf.category, time, includeIncome: rf.includeIncome });
+  } catch {
+    return; // an incomplete custom range (e.g. no end date yet) — nothing to chart
+  }
+  charts.reportTrendChart('chart-report-trend', report.trend, report.range.granularity);
 }
 
 function renderCycleOptions() {
@@ -357,6 +390,7 @@ function generatePackage() {
     flags: state.result.flags,
     subscriptions: state.result.subscriptions,
     bills: state.result.bills,
+    cellular: state.result.cellular,
     coverage: state.result.coverage,
     cycle: state.cycle,
     merchantRules: state.merchantRules,
@@ -389,7 +423,6 @@ function showEmailDraft() {
   const text = buildEmailDraft({
     cycle: state.cycle,
     flags: state.result.flags,
-    subscriptions: state.result.subscriptions,
     coverage: state.result.coverage,
     transactions: state.transactions,
   });
@@ -504,6 +537,16 @@ function wireEvents() {
     if (e.target.id === 'txn-account') { state.filter.account = e.target.value; render(); }
     if (e.target.id === 'txn-category') { state.filter.category = e.target.value; render(); }
     if (e.target.id === 'txn-scope') { state.filter.scope = e.target.value; render(); }
+
+    const rf = state.reportFilter;
+    if (e.target.id === 'rpt-who') { rf.who = e.target.value; render(); }
+    if (e.target.id === 'rpt-category') { rf.category = e.target.value; render(); }
+    if (e.target.id === 'rpt-time-mode') { rf.timeMode = e.target.value; render(); }
+    if (e.target.id === 'rpt-month') { rf.month = e.target.value; render(); }
+    if (e.target.id === 'rpt-year') { rf.year = e.target.value; render(); }
+    if (e.target.id === 'rpt-start') { rf.start = e.target.value; render(); }
+    if (e.target.id === 'rpt-end') { rf.end = e.target.value; render(); }
+    if (e.target.id === 'rpt-include-income') { rf.includeIncome = e.target.checked; render(); }
   });
 
   document.addEventListener('click', (e) => {
@@ -599,6 +642,11 @@ async function boot() {
   if (cached.length) {
     state.rawTransactions = cached;
     recategorize();
+    // Default the Reports tab to the same cycle everything else opens on,
+    // rather than the calendar's real "today" — the ledger's most recent data
+    // and the machine's clock are not the same thing.
+    state.reportFilter.month = state.cycle;
+    state.reportFilter.year = state.cycle.slice(0, 4);
     render();
     banner('', 'Loaded from local cache',
       `${cached.length.toLocaleString()} transactions restored from this browser. Connect Drive to refresh from the master workbook.`);

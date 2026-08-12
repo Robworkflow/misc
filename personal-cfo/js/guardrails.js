@@ -4,13 +4,15 @@
 // a limit, or an allowance, and nothing here can block or reject a transaction —
 // every rule produces a flag for a human to read and decide on.
 //
-// Rules, per the PRD:
+// Rules, per the PRD (plus cellular, added later on the same movement test):
 //   1. subscription total moves >= 10% month over month
-//   2. a category exceeds its trailing-12-month baseline
+//   1b. a recurring bill moves >= 10% month over month
+//   1c. a cellular bill moves >= 10% month over month
+//   2. a category exceeds its trailing-12-month baseline (per person — see below)
 //   3. a charge comes from a merchant with no entry in the lookup table
 //   4. one of the 7 accounts has no statement for the cycle
 
-import { ACCOUNTS, THRESHOLDS, NON_SPEND_CATEGORIES, UNMAPPED } from './config.js';
+import { ACCOUNTS, THRESHOLDS, NON_SPEND_CATEGORIES, UNMAPPED, PERSONAS } from './config.js';
 import { groupUnmapped, txnFingerprint } from './merchants.js';
 
 export const monthOf = (date) => String(date || '').slice(0, 7);
@@ -265,30 +267,66 @@ export function evaluate({ transactions, statements, cycle, reviewed = new Set()
     });
   }
 
-  /* --- 2. category over trailing-12-month baseline -------------------------- */
-  const { baselines, window } = categoryBaselines(compared, cycle);
-  const cycleByCategory = new Map();
-  for (const t of comparedCycle) {
-    if (!isSpend(t)) continue;
-    cycleByCategory.set(t.category, (cycleByCategory.get(t.category) || 0) + t.amount);
-  }
-  for (const [category, total] of cycleByCategory) {
-    const base = baselines.get(category);
-    if (!base || base.baseline <= 0 || base.monthsActive < 2) continue;
-    const over = total - base.baseline;
-    if (over <= 0 || over < THRESHOLDS.minFlagAmount) continue;
-    const ratio = over / base.baseline;
-    if (ratio < THRESHOLDS.categoryOverBaselinePct) continue;
+  /* --- 1c. cellular ---------------------------------------------------------
+   * Its own recurring line, distinct from both subscriptions and bills: a phone
+   * bill is bigger and more variable than a $10 app subscription (folding it
+   * into that number would drown out the change the 10% rule exists to catch,
+   * the same reason bills were split out), and it is a genuine recurring
+   * obligation rather than a one-off, so it does not belong with ordinary
+   * category spend either. Same movement test, own burn total, own flag type. */
+  const cellular = subscriptionSeries(compared, cycle, THRESHOLDS.baselineMonths + 1, 'cellular');
+  for (const item of cellular.subscriptions) {
+    if (item.previous <= 0 || item.current <= 0) continue;
+    const delta = (item.current - item.previous) / item.previous;
+    if (Math.abs(delta) < THRESHOLDS.subscriptionMoMPct) continue;
+    if (Math.abs(item.current - item.previous) < THRESHOLDS.minFlagAmount) continue;
     flags.push({
-      id: `cat-${category}-${cycle}`,
-      type: 'category-overspend',
-      severity: ratio >= 0.5 ? 'critical' : 'serious',
-      title: `${category} above its 12-month baseline by ${pct(ratio)}`,
-      detail: `${money(total)} this cycle vs a ${money(base.baseline)}/mo baseline over ${base.monthsActive} active month${base.monthsActive === 1 ? '' : 's'}.`,
-      numbers: { current: total, baseline: base.baseline, delta: ratio },
-      subject: category,
+      id: `cellular-${item.merchant}-${cycle}`,
+      type: 'cellular-jump',
+      severity: delta > 0 ? 'serious' : 'good',
+      title: `${item.merchant} ${delta > 0 ? 'up' : 'down'} ${pct(Math.abs(delta))}`,
+      detail: `Cellular bill moved ${money(item.previous)} → ${money(item.current)} between ${prev} and ${cycle}.`,
+      numbers: { previous: item.previous, current: item.current, delta },
+      subject: item.merchant,
       caveat: comparisonCaveat,
     });
+  }
+
+  /* --- 2. category over trailing-12-month baseline, per person -------------
+   * Each person's spend in a category is compared against *that person's own*
+   * trailing baseline, not a blended household one. Otherwise one person's
+   * jump can hide inside another's drop — e.g. Rob's Dining spend climbing
+   * 15% would never trip this rule if Melanie's Dining fell enough to keep
+   * the household total flat. Baselines are still built with the same
+   * categoryBaselines() function and the same NON_SPEND_CATEGORIES exclusion;
+   * only the transaction set handed in is now sliced to one person first. */
+  const { baselines, window } = categoryBaselines(compared, cycle);
+  for (const persona of PERSONAS) {
+    const personaBaselines = categoryBaselines(compared.filter((t) => t.persona === persona), cycle).baselines;
+    const personaCycleByCategory = new Map();
+    for (const t of comparedCycle) {
+      if (!isSpend(t) || t.persona !== persona) continue;
+      personaCycleByCategory.set(t.category, (personaCycleByCategory.get(t.category) || 0) + t.amount);
+    }
+    for (const [category, total] of personaCycleByCategory) {
+      const base = personaBaselines.get(category);
+      if (!base || base.baseline <= 0 || base.monthsActive < 2) continue;
+      const over = total - base.baseline;
+      if (over <= 0 || over < THRESHOLDS.minFlagAmount) continue;
+      const ratio = over / base.baseline;
+      if (ratio < THRESHOLDS.categoryOverBaselinePct) continue;
+      flags.push({
+        id: `cat-${persona}-${category}-${cycle}`,
+        type: 'category-overspend',
+        severity: ratio >= 0.5 ? 'critical' : 'serious',
+        title: `${persona}: ${category} above their 12-month baseline by ${pct(ratio)}`,
+        detail: `${money(total)} this cycle vs a ${money(base.baseline)}/mo baseline over ${base.monthsActive} active month${base.monthsActive === 1 ? '' : 's'}, for ${persona}.`,
+        numbers: { current: total, baseline: base.baseline, delta: ratio },
+        subject: `${category} — ${persona}`,
+        persona,
+        caveat: comparisonCaveat,
+      });
+    }
   }
 
   /* --- 3. unmapped merchants ----------------------------------------------- */
@@ -344,7 +382,7 @@ export function evaluate({ transactions, statements, cycle, reviewed = new Set()
   flags.sort((a, b) => (order[a.severity] - order[b.severity])
     || (Math.abs(b.numbers?.current || 0) - Math.abs(a.numbers?.current || 0)));
 
-  return { flags, subscriptions: subs, bills, baselines, coverage, window, cycleTxns, heldOut };
+  return { flags, subscriptions: subs, bills, cellular, baselines, coverage, window, cycleTxns, heldOut };
 }
 
 /** Spend by category for a cycle, with baseline comparison, for the charts. */

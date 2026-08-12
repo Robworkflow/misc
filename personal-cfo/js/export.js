@@ -4,8 +4,9 @@
 // to it. Each cycle produces a *new* .xlsx for the user to review and re-upload
 // manually, plus a plain-text changelog and an email draft for Melanie.
 
-import { ACCOUNTS, THRESHOLDS } from './config.js';
+import { ACCOUNTS } from './config.js';
 import { monthOf, addMonths } from './guardrails.js';
+import { buildReportWithComparison } from './reports.js';
 
 const money = (n) => `$${Math.abs(n).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const money0 = (n) => `$${Math.round(Math.abs(n)).toLocaleString('en-CA')}`;
@@ -26,7 +27,7 @@ function download(blob, filename) {
  * Build the updated workbook: full transaction register, the merchant lookup
  * table as it now stands, this cycle's flags, and the subscription view.
  */
-export function buildUpdatePackage({ transactions, flags, subscriptions, bills, coverage, cycle, merchantRules, newTransactions, reviewed = new Set(), suggestions = new Map() }, XLSX) {
+export function buildUpdatePackage({ transactions, flags, subscriptions, bills, cellular, coverage, cycle, merchantRules, newTransactions, reviewed = new Set(), suggestions = new Map() }, XLSX) {
   const wb = XLSX.utils.book_new();
 
   const txnRows = transactions
@@ -96,6 +97,7 @@ export function buildUpdatePackage({ transactions, flags, subscriptions, bills, 
   const subRows = [
     ...subscriptions.subscriptions.map((s) => ({ Kind: 'Subscription', ...subRow(s) })),
     ...(bills?.subscriptions || []).map((s) => ({ Kind: 'Recurring bill', ...subRow(s) })),
+    ...(cellular?.subscriptions || []).map((s) => ({ Kind: 'Cellular', ...subRow(s) })),
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(subRows.length ? subRows : [{ Kind: 'none' }]), 'Subscriptions');
 
@@ -207,51 +209,65 @@ export function downloadChangelog(text, cycle) {
   download(new Blob([text], { type: 'text/plain' }), `Personal CFO changelog ${cycle}.txt`);
 }
 
+// Section order for the summary email. Fixed and not persona-config-driven —
+// Melanie first regardless of what order PERSONAS is declared in elsewhere.
+const EMAIL_PERSONA_ORDER = ['Melanie', 'Rob', 'Daniko'];
+
+/**
+ * One persona's section of the email, in the same shape the Reports tab shows
+ * for { who: persona, category: 'All' }: spend total with period-over-period
+ * change, notable category movers, and the top categories for the month.
+ * Built from buildReportWithComparison() — the same call the Reports tab
+ * makes — so the email can never drift from what that tab would show.
+ */
+function personaEmailSection(persona, transactions, cycle) {
+  const { current, previous, delta, movers } = buildReportWithComparison(transactions, {
+    who: persona,
+    category: 'All',
+    time: { mode: 'monthly', month: cycle },
+    includeIncome: false,
+  });
+
+  const lines = [];
+  lines.push(persona.toUpperCase());
+  lines.push('-'.repeat(persona.length));
+  lines.push('');
+  lines.push(`Spend: ${money0(current.total)} (${current.count} transactions)${
+    delta == null ? '' : `, ${delta > 0 ? 'up' : 'down'} ${pct(Math.abs(delta))} from ${money0(previous.total)} the month before`}.`);
+
+  if (movers.length) {
+    lines.push('', 'Notable changes vs the month before:');
+    movers.forEach((m) => lines.push(`  • ${m.category}: ${money0(m.previous)} → ${money0(m.current)} (${m.delta > 0 ? '+' : '−'}${money0(Math.abs(m.delta))})`));
+  }
+
+  if (current.byCategory?.length) {
+    lines.push('', 'Top categories:');
+    current.byCategory.slice(0, 5).forEach((c) => lines.push(`  • ${c.key}: ${money0(c.total)}`));
+  }
+
+  if (!current.count) lines.push('', 'No spend recorded this month.');
+
+  lines.push('');
+  return lines;
+}
+
 /**
  * Plain-language monthly summary for Melanie. Written to be sent as-is, with no
- * spreadsheet jargon and no instruction to change any spending.
+ * spreadsheet jargon and no instruction to change any spending. Three sections,
+ * one per person, each built from the same aggregation the Reports tab uses —
+ * this function has no totals logic of its own beyond assembling the wording.
  */
-export function buildEmailDraft({ cycle, flags, subscriptions, coverage, transactions }) {
+export function buildEmailDraft({ cycle, flags, coverage, transactions }) {
   const monthName = new Date(`${cycle}-01T12:00:00`).toLocaleDateString('en-CA', { month: 'long', year: 'numeric' });
-  const cycleTxns = transactions.filter((t) => monthOf(t.date) === cycle);
-  const spend = cycleTxns.filter((t) => t.flow === 'Expense' && !['Transfers', 'Income'].includes(t.category))
-    .reduce((s, t) => s + t.amount, 0);
-
-  const subNow = subscriptions.series.at(-1)?.value || 0;
-  const subPrev = subscriptions.series.at(-2)?.value || 0;
-  const subDelta = subPrev > 0 ? (subNow - subPrev) / subPrev : null;
-
   const missing = coverage.filter((a) => a.txnCount === 0);
   const unmapped = flags.filter((f) => f.type === 'unmapped-merchant');
-  const overspend = flags.filter((f) => f.type === 'category-overspend');
-  const subChanges = flags.filter((f) => f.type.startsWith('subscription'));
 
   const lines = [];
   lines.push(`Subject: Money check-in — ${monthName}`, '');
   lines.push('Hi Mel,', '');
-  lines.push(`Here's the ${monthName} run-through of our accounts. Nothing here needs action unless something looks off to you — it's just so we both know what happened.`, '');
+  lines.push(`Here's the ${monthName} run-through of our accounts, broken out by person. Nothing here needs action unless something looks off to you — it's just so we all know what happened.`, '');
 
-  lines.push(`We spent ${money0(spend)} across everything last month.`);
-  if (subDelta !== null && Math.abs(subDelta) >= THRESHOLDS.subscriptionMoMPct) {
-    lines.push(`Our subscriptions came to ${money0(subNow)}, which is ${subDelta > 0 ? 'up' : 'down'} ${pct(Math.abs(subDelta))} from ${money0(subPrev)} the month before.`);
-  } else {
-    lines.push(`Our subscriptions came to ${money0(subNow)}, which is about the same as last month.`);
-  }
-  lines.push('');
-
-  if (subChanges.length) {
-    lines.push('Subscription changes:');
-    subChanges.slice(0, 8).forEach((f) => lines.push(`  • ${f.title}`));
-    lines.push('');
-  }
-
-  if (overspend.length) {
-    lines.push('Spending that ran higher than our usual pattern:');
-    overspend.slice(0, 6).forEach((f) => {
-      lines.push(`  • ${f.subject}: ${money0(f.numbers.current)} this month vs ${money0(f.numbers.baseline)} on average.`);
-    });
-    lines.push('');
-  }
+  EMAIL_PERSONA_ORDER.forEach((persona) => lines.push(...personaEmailSection(persona, transactions, cycle)));
 
   if (unmapped.length) {
     const total = unmapped.reduce((s, f) => s + (f.numbers?.current || 0), 0);
@@ -263,10 +279,6 @@ export function buildEmailDraft({ cycle, flags, subscriptions, coverage, transac
 
   if (missing.length) {
     lines.push(`One thing to note: I don't have ${missing.length === 1 ? 'a statement' : 'statements'} yet for ${missing.map((a) => a.name).join(', ')}, so ${missing.length === 1 ? "that account isn't" : "those accounts aren't"} included in the numbers above.`, '');
-  }
-
-  if (!subChanges.length && !overspend.length && !unmapped.length && !missing.length) {
-    lines.push('Nothing unusual turned up this month — everything came in line with our normal pattern.', '');
   }
 
   lines.push('Shout if anything looks wrong and I\'ll dig into it.', '', 'Rob');

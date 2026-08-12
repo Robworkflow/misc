@@ -34,6 +34,7 @@ export const ACCOUNTS = [
     holder: 'Roberto Luongo',
     person: 'Rob',
     defaultSpendType: 'Personal',
+    personaDefault: 'Rob',
     statementFormat: 'rbc-bank',
     last4: '7434',
     match: ['rob bank', 'dad statement'],
@@ -46,6 +47,7 @@ export const ACCOUNTS = [
     holder: 'Roberto Luongo',
     person: 'Rob',
     defaultSpendType: 'Personal',
+    personaDefault: 'Rob',
     statementFormat: 'rbc-visa',
     last4: '0456',
     match: ['rob visa personal', 'rob personal visa'],
@@ -58,6 +60,7 @@ export const ACCOUNTS = [
     holder: 'Melanie Scott-Luongo',
     person: 'Mel',
     defaultSpendType: 'Personal',
+    personaDefault: 'Melanie',
     statementFormat: 'rbc-bank',
     last4: '5599',
     match: ['mel bank'],
@@ -70,6 +73,7 @@ export const ACCOUNTS = [
     holder: 'Melanie Scott-Luongo',
     person: 'Mel',
     defaultSpendType: 'Personal',
+    personaDefault: 'Melanie',
     statementFormat: 'rbc-visa',
     last4: '0784',
     match: ['mel personal visa', 'melanie personal visa'],
@@ -82,6 +86,7 @@ export const ACCOUNTS = [
     holder: 'Daniko Management',
     person: 'Rob',
     defaultSpendType: 'Business',
+    personaDefault: 'Daniko',
     statementFormat: 'rbc-bank',
     last4: '6673',
     match: ['daniko bank'],
@@ -96,6 +101,10 @@ export const ACCOUNTS = [
     // Daniko cards deliberately carry both business and personal charges; the
     // Category/Spend Type column separates them, not the account.
     defaultSpendType: 'Business',
+    // No fixed persona: derived per-transaction from the Business/Personal spend
+    // type (see personaFor() in merchants.js). null here is the signal that this
+    // account's persona is computed, not looked up.
+    personaDefault: null,
     statementFormat: 'rbc-visa',
     last4: '9166',
     match: ['daniko rob', 'rob daniko'],
@@ -108,12 +117,20 @@ export const ACCOUNTS = [
     holder: 'Melanie Scott-Luongo',
     person: 'Mel',
     defaultSpendType: 'Business',
+    personaDefault: 'Melanie',
+    // Every charge on this card is persona=Melanie, no exceptions, no override —
+    // unlike Daniko Rob Visa there is no per-transaction derivation here.
+    personaLocked: true,
     statementFormat: 'rbc-visa',
     last4: '7578',
     match: ['daniko mel', 'mel daniko'],
     folders: { 2025: '1NdpMo7vp7LZK2jxJ91g_XPSR5h_b9PTY', 2026: '1bX21sT-8eGsRF-FSetml9kPN65hWEdEm' },
   },
 ];
+
+// The three household/business personas a transaction is always assigned to.
+// See personaFor() in js/merchants.js for how a transaction resolves to one.
+export const PERSONAS = ['Rob', 'Melanie', 'Daniko'];
 
 export const THRESHOLDS = {
   // Flag a subscription whose monthly total moves by at least this much MoM.

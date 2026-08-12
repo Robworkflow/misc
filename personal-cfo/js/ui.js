@@ -1,8 +1,9 @@
 // View rendering. Pure functions of app state -> DOM; all behaviour is wired in
 // app.js via delegated events.
 
-import { THRESHOLDS } from './config.js';
+import { THRESHOLDS, PERSONAS } from './config.js';
 import { monthOf, addMonths } from './guardrails.js';
+import { buildReportWithComparison } from './reports.js';
 
 const money = (n, dp = 0) => `$${Math.abs(Number(n) || 0).toLocaleString('en-CA', { minimumFractionDigits: dp, maximumFractionDigits: dp })}`;
 const pct = (n) => `${(n * 100).toFixed(1)}%`;
@@ -26,6 +27,7 @@ const TYPE_LABEL = {
   'subscription-new': 'New subscription',
   'subscription-cancelled': 'Subscription stopped',
   'bill-change': 'Recurring bill change',
+  'cellular-jump': 'Cellular bill change',
   'category-overspend': 'Category over baseline',
   'unmapped-merchant': 'Unmapped merchant',
   'missing-statement': 'Missing statement',
@@ -325,7 +327,7 @@ function flagCard(flag, isAcked, categories) {
 /* --------------------------------------------------------- subscriptions */
 
 export function renderSubscriptions(el, state) {
-  const { subscriptions, bills } = state.result;
+  const { subscriptions, bills, cellular } = state.result;
 
   el.innerHTML = `
     <div class="card">
@@ -344,7 +346,14 @@ export function renderSubscriptions(el, state) {
       Loans, utilities, insurance and taxes recur but are not subscriptions, so they are tracked separately and kept
       out of the subscription-burn number.
     </p>
-    ${subTable(bills?.subscriptions || [], 'No recurring bills in this window.')}`;
+    ${subTable(bills?.subscriptions || [], 'No recurring bills in this window.')}
+
+    <div class="section-title">Cellular (${cellular?.subscriptions.length || 0})</div>
+    <p class="hint" style="margin:-6px 0 12px">
+      Cell phone bills are bigger and more variable than a typical app subscription, so they get their own burn
+      total and their own move flag — tracked separately from both Subscriptions and Recurring bills.
+    </p>
+    ${subTable(cellular?.subscriptions || [], 'No cellular charges in this window.')}`;
 }
 
 function subTable(items, emptyMsg) {
@@ -381,6 +390,153 @@ function subTable(items, emptyMsg) {
 }
 
 /* --------------------------------------------------------------- accounts */
+
+/* --------------------------------------------------------------- reports */
+
+function reportTimeFilter(rf) {
+  if (rf.timeMode === 'monthly') return { mode: 'monthly', month: rf.month };
+  if (rf.timeMode === 'yearly') return { mode: 'yearly', year: rf.year };
+  return { mode: 'custom', start: rf.start, end: rf.end };
+}
+
+const rangeLabel = (range) => (range.start === range.end ? range.start : `${range.start} → ${range.end}`);
+
+export function renderReports(el, state) {
+  const rf = state.reportFilter;
+  const years = [...new Set(state.cycles.map((c) => c.slice(0, 4)))].sort().reverse();
+
+  let report;
+  let error = null;
+  try {
+    report = buildReportWithComparison(state.transactions, {
+      who: rf.who,
+      category: rf.category,
+      time: reportTimeFilter(rf),
+      includeIncome: rf.includeIncome,
+    });
+  } catch (err) {
+    error = err.message;
+  }
+
+  el.innerHTML = `
+    <div class="toolbar">
+      <select id="rpt-who">
+        <option value="All" ${rf.who === 'All' ? 'selected' : ''}>Everyone</option>
+        ${PERSONAS.map((p) => `<option value="${esc(p)}" ${rf.who === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}
+      </select>
+      <select id="rpt-category">
+        <option value="All" ${rf.category === 'All' ? 'selected' : ''}>All categories</option>
+        ${state.categories.map((c) => `<option value="${esc(c)}" ${rf.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+      </select>
+      <select id="rpt-time-mode">
+        <option value="monthly" ${rf.timeMode === 'monthly' ? 'selected' : ''}>Monthly</option>
+        <option value="yearly" ${rf.timeMode === 'yearly' ? 'selected' : ''}>Yearly</option>
+        <option value="custom" ${rf.timeMode === 'custom' ? 'selected' : ''}>Custom range</option>
+      </select>
+      ${rf.timeMode === 'monthly' ? `<input type="month" id="rpt-month" value="${esc(rf.month)}">` : ''}
+      ${rf.timeMode === 'yearly' ? `
+        <select id="rpt-year">
+          ${years.length ? years.map((y) => `<option value="${y}" ${rf.year === y ? 'selected' : ''}>${y}</option>`).join('')
+    : `<option value="${esc(rf.year)}" selected>${esc(rf.year)}</option>`}
+        </select>` : ''}
+      ${rf.timeMode === 'custom' ? `
+        <input type="date" id="rpt-start" value="${esc(rf.start)}">
+        <span class="hint">to</span>
+        <input type="date" id="rpt-end" value="${esc(rf.end)}">` : ''}
+      <label class="conflict-option" style="margin:0">
+        <input type="checkbox" id="rpt-include-income" ${rf.includeIncome ? 'checked' : ''}>
+        Include income
+      </label>
+    </div>
+
+    ${error ? `<div class="empty">${esc(error)}</div>` : reportBody(report, rf)}`;
+}
+
+function reportBody(report, rf) {
+  const { current, previous, delta, movers } = report;
+  const deltaClass = delta == null ? '' : delta > 0 ? 'up' : 'down';
+  const deltaText = delta == null ? 'no prior period to compare'
+    : `${delta > 0 ? '▲' : '▼'} ${pct(Math.abs(delta))} vs ${rangeLabel(previous.range)} (${money(previous.total)})`;
+
+  return `
+    <div class="grid grid-stats" style="margin-top:16px">
+      <div class="card stat">
+        <span class="label">Spend — ${esc(rangeLabel(current.range))}</span>
+        <span class="value">${money(current.total)}</span>
+        <span class="meta ${deltaClass}">${deltaText}</span>
+      </div>
+      <div class="card stat">
+        <span class="label">Transactions</span>
+        <span class="value">${current.count}</span>
+        <span class="meta">${esc(rf.who === 'All' ? 'everyone' : rf.who)} · ${esc(rf.category === 'All' ? 'all categories' : rf.category)}</span>
+      </div>
+      ${rf.includeIncome ? `
+        <div class="card stat">
+          <span class="label">Income</span>
+          <span class="value">${money(current.incomeTotal)}</span>
+          <span class="meta">shown separately — never combined with spend</span>
+        </div>` : ''}
+    </div>
+
+    <div class="grid grid-2" style="margin-top:16px">
+      <div class="card">
+        <div class="card-head">
+          <h3>Trend</h3>
+          <span class="hint">${current.range.granularity === 'day' ? 'daily' : 'monthly'}</span>
+        </div>
+        <div class="chart-box"><canvas id="chart-report-trend"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Notable changes vs prior period</h3></div>
+        ${movers.length ? `
+          <div class="table-wrap" style="border:none">
+            <table>
+              <thead><tr><th>Category</th><th class="num">Previous</th><th class="num">Now</th><th class="num">Change</th></tr></thead>
+              <tbody>
+                ${movers.map((m) => `
+                  <tr>
+                    <td>${esc(m.category)}</td>
+                    <td class="num muted">${money(m.previous)}</td>
+                    <td class="num">${money(m.current)}</td>
+                    <td class="num"><span class="badge badge-${m.delta > 0 ? 'critical' : 'good'}">${m.delta > 0 ? '+' : '−'}${money(m.delta)}</span></td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>` : '<p class="hint">Nothing moved by more than $5 between the two periods.</p>'}
+      </div>
+    </div>
+
+    <div class="grid grid-2" style="margin-top:16px">
+      ${current.byPersona ? `
+        <div class="card">
+          <div class="card-head"><h3>By person</h3></div>
+          ${breakdownTable(current.byPersona)}
+        </div>` : ''}
+      ${current.byCategory ? `
+        <div class="card">
+          <div class="card-head"><h3>By category</h3></div>
+          ${breakdownTable(current.byCategory.slice(0, 12))}
+        </div>` : ''}
+    </div>`;
+}
+
+function breakdownTable(rows) {
+  if (!rows.length) return '<p class="hint">No spend in this period.</p>';
+  const total = rows.reduce((s, r) => s + r.total, 0) || 1;
+  return `
+    <div class="table-wrap" style="border:none">
+      <table>
+        <tbody>
+          ${rows.map((r) => `
+            <tr>
+              <td>${esc(r.key)}</td>
+              <td class="num muted">${pct(r.total / total)}</td>
+              <td class="num">${money(r.total)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
 
 export function renderAccounts(el, state) {
   const { coverage } = state.result;

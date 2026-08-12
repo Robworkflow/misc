@@ -164,6 +164,34 @@ export function categorize(txn, index, account) {
   };
 }
 
+/**
+ * Resolve the persona (Rob / Melanie / Daniko) a transaction belongs to.
+ *
+ * Every account but one has a fixed persona (see `personaDefault` in
+ * config.js). The two exceptions:
+ *
+ *   - Daniko Mel Visa is `personaLocked`: always Melanie, regardless of the
+ *     Business/Personal spend type on the charge. There is no override for
+ *     this — it is not a default, it is a fact about whose card it is.
+ *   - Daniko Rob Visa has no fixed persona at all. It is derived from the
+ *     *resolved* spend type (after any per-transaction override): a Business
+ *     charge is Daniko's spend, a Personal charge is Rob's. This is
+ *     deliberately not a second flag — flipping the existing Business/
+ *     Personal control on that card is the only way persona moves here, so
+ *     `resolvedSpendType` must already reflect any override the caller has
+ *     applied before calling this.
+ *
+ * Must be called after spend-type overrides are resolved, since Daniko Rob
+ * Visa's persona depends on the final value, not the account default.
+ */
+export function personaFor(account, resolvedSpendType) {
+  if (!account) return null;
+  if (account.personaLocked) return account.personaDefault;
+  if (account.personaDefault !== null && account.personaDefault !== undefined) return account.personaDefault;
+  // personaDefault === null: derived-persona account (Daniko Rob Visa today).
+  return resolvedSpendType === 'Personal' ? 'Rob' : 'Daniko';
+}
+
 export function titleCase(s) {
   return String(s || '')
     .toLowerCase()

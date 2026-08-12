@@ -1,8 +1,10 @@
 {
- "generatedAt": "2026-08-12T00:42:10Z",
+ "generatedAt": "2026-08-12T18:43:20Z",
  "generatedFrom": "master.xlsx",
  "categories": [
   "Automotive",
+  "Business - Misc",
+  "Cellular",
   "Cottage & Recreation",
   "Dining & Food",
   "Entertainment",
@@ -332,11 +334,11 @@
   {
    "pattern": "TELUS",
    "display": "Telus Mobility",
-   "category": "Subscriptions",
+   "category": "Cellular",
    "spendType": "Business",
    "person": null,
-   "isSubscription": true,
-   "recurringType": "subscription",
+   "isSubscription": false,
+   "recurringType": "cellular",
    "cadence": "monthly",
    "source": "curated"
   },
