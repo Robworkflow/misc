@@ -217,24 +217,28 @@ async function loadMaster() {
   const byName = new Map(ACCOUNTS.map((a) => [a.name, a]));
   const workbookRows = rows.map((r) => ({ ...r, accountId: byName.get(r.accountName)?.id || null }));
 
-  // Dedup workbook rows by fingerprint — duplicate entries in the master spreadsheet
-  // would otherwise create double-counting across every tab and report.
-  const seen = new Set();
-  const dedupedWorkbookRows = workbookRows.filter((r) => {
-    const fp = txnFingerprint(r);
-    if (seen.has(fp)) return false;
-    seen.add(fp);
-    return true;
-  });
-
   // Keep any statement-sourced transactions; replace the workbook baseline.
   state.rawTransactions = [
     ...state.rawTransactions.filter((t) => t.source === 'statement'),
-    ...dedupedWorkbookRows,
+    ...workbookRows,
   ];
   recategorize();
   render();
   banner('', 'Master workbook loaded', `${rows.length.toLocaleString()} transactions read from ${DRIVE.masterFileName}. This file is read-only to the app.`);
+
+  // Warn if the workbook contains rows with identical fingerprints — these are
+  // likely duplicate entries in the source spreadsheet, not legitimate repeats
+  // (which can't be distinguished algorithmically). Fix at the source file.
+  const fpCounts = new Map();
+  for (const r of workbookRows) {
+    const fp = txnFingerprint(r);
+    fpCounts.set(fp, (fpCounts.get(fp) || 0) + 1);
+  }
+  const dupGroups = [...fpCounts.values()].filter((n) => n > 1).length;
+  if (dupGroups > 0) {
+    banner('warn', `${dupGroups} possible duplicate group${dupGroups === 1 ? '' : 's'} in master workbook`,
+      'Some transactions appear more than once with identical date, amount, and description. This may cause double-counting. Review the source spreadsheet and remove the extra rows.');
+  }
 }
 
 async function scanDrive() {
