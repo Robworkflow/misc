@@ -70,6 +70,73 @@ export function removeMerchantRule(pattern) {
   write('merchantRemoved', [...removed]);
 }
 
+/**
+ * The fields that make two override rules for the same pattern "the same
+ * decision". `pattern`, `display` and `source` are excluded on purpose:
+ * display is cosmetic, source is always 'user' for an override, and pattern
+ * is the key, not a value being compared.
+ */
+const OVERRIDE_FIELDS = ['category', 'spendType', 'person', 'isSubscription', 'recurringType', 'cadence'];
+
+// isSubscription is boolean; every other field is string-or-absent. `?? null`
+// alone is not enough for the boolean: `false ?? null` is `false`, not `null`,
+// so a stored `false` would never equal an imported entry that simply omits
+// the field. Normalising through Boolean() first makes "false" and "missing"
+// compare equal, the way every other absent field already does via `?? null`.
+function normalizeField(field, value) {
+  if (field === 'isSubscription') return Boolean(value);
+  return value ?? null;
+}
+
+function overridesEqual(a, b) {
+  return OVERRIDE_FIELDS.every((f) => normalizeField(f, a?.[f]) === normalizeField(f, b?.[f]));
+}
+
+/** Every merchant override currently stored, keyed by pattern. */
+export function allMerchantOverrides() {
+  return read('merchantOverrides', {});
+}
+
+/**
+ * Compare an imported set of overrides against what's already stored, without
+ * writing anything. Three buckets:
+ *   - added:     pattern only in the import -> nothing to decide, just add it
+ *   - unchanged: pattern in both, same category/spendType/etc -> no-op
+ *   - conflicts: pattern in both, different values -> a human has to choose,
+ *                because picking one silently is exactly what this must not do
+ */
+export function diffMerchantOverrides(imported) {
+  const current = allMerchantOverrides();
+  const added = [];
+  const unchanged = [];
+  const conflicts = [];
+  for (const [pattern, incoming] of Object.entries(imported || {})) {
+    if (!incoming || typeof incoming !== 'object') continue;
+    const existing = current[pattern];
+    if (!existing) added.push({ pattern, incoming });
+    else if (overridesEqual(existing, incoming)) unchanged.push({ pattern, incoming, existing });
+    else conflicts.push({ pattern, existing, incoming });
+  }
+  return { added, unchanged, conflicts };
+}
+
+/**
+ * Apply a previously computed diff. `added` and `unchanged` require no
+ * decision and are always applied. Each entry in `diff.conflicts` is applied
+ * only if `resolutions[pattern] === 'use-imported'`; anything left
+ * unresolved (missing from `resolutions`, or explicitly 'keep') leaves the
+ * existing local value untouched. There is no default that silently prefers
+ * one side — every conflict is applied or skipped by an explicit choice.
+ */
+export function applyMerchantOverridesDiff(diff, resolutions = {}) {
+  const current = allMerchantOverrides();
+  for (const { pattern, incoming } of diff.added) current[pattern] = { ...incoming, pattern, source: 'user' };
+  for (const { pattern, incoming } of diff.conflicts) {
+    if (resolutions[pattern] === 'use-imported') current[pattern] = { ...incoming, pattern, source: 'user' };
+  }
+  write('merchantOverrides', current);
+}
+
 /* --------------------------------------------------------- ingest registry */
 
 /** fileId -> { fileName, accountId, statementDate, ingestedAt, txnCount } */

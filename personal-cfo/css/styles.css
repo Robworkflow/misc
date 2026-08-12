@@ -339,6 +339,22 @@ dialog pre {
   white-space: pre-wrap; word-break: break-word;
 }
 
+#import-conflicts-list { max-height: 420px; overflow: auto; }
+.conflict-row {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.conflict-row:last-child { border-bottom: none; }
+.conflict-row code { color: var(--ink-2); }
+.conflict-option {
+  display: flex; align-items: baseline; gap: 7px;
+  margin: 6px 0 0; font-size: 13px; color: var(--ink);
+  cursor: pointer;
+}
+/* Override the dialog-wide `width: 100%` on inputs -- these are small radio
+   buttons inline with a label, not full-width form fields. */
+.conflict-option input[type='radio'] { width: auto; flex: none; margin: 0; }
+
 /* --------------------------------------------------------------- progress */
 
 .progress { display: flex; align-items: center; gap: 10px; color: var(--ink-2); font-size: 13px; }

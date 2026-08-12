@@ -7,6 +7,7 @@ import {
   acknowledgedFlags, acknowledgeFlag, unacknowledgeFlag,
   reviewedSet, markReviewed, unmarkReviewed,
   spendTypeOverrides, setSpendTypeOverride, clearSpendTypeOverride,
+  allMerchantOverrides, diffMerchantOverrides, applyMerchantOverridesDiff,
   cacheTransactions, cachedTransactions,
 } from './store.js';
 import { compile, categorize, txnFingerprint } from './merchants.js';
@@ -19,6 +20,7 @@ import * as ui from './ui.js';
 import {
   buildUpdatePackage, buildChangelog, downloadChangelog,
   buildEmailDraft, downloadEmail, exportLookupTable,
+  downloadMerchantOverrides, parseMerchantOverridesFile,
 } from './export.js';
 
 const state = {
@@ -289,6 +291,63 @@ function assignCategory(merchantKey, display, category) {
   setTimeout(() => status(''), 4000);
 }
 
+/* --------------------------------------------------- merchant overrides I/O */
+
+function exportOverrides() {
+  const overrides = allMerchantOverrides();
+  const count = Object.keys(overrides).length;
+  if (!count) {
+    banner('', 'Nothing to export', 'No merchant overrides have been made in this browser yet.');
+    return;
+  }
+  downloadMerchantOverrides(overrides);
+  banner('', `Exported ${count} override${count === 1 ? '' : 's'}`,
+    'Keep this file somewhere durable. Importing it later — on this browser or another — restores every category assignment in it.');
+}
+
+let pendingImport = null; // { diff } awaiting conflict resolution in the dialog
+
+function importOverridesFromFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    let payload;
+    try {
+      payload = parseMerchantOverridesFile(String(reader.result));
+    } catch (err) {
+      banner('error', 'Could not import that file', err.message);
+      return;
+    }
+
+    const diff = diffMerchantOverrides(payload.overrides);
+    if (!diff.conflicts.length) {
+      applyMerchantOverridesDiff(diff, {});
+      finishImport(diff.added.length, diff.unchanged.length, 0, 0);
+      return;
+    }
+
+    pendingImport = { diff };
+    $('#import-conflicts-summary').textContent =
+      `${diff.added.length} new rule${diff.added.length === 1 ? '' : 's'} will be added automatically. `
+      + `${diff.unchanged.length} already match. ${diff.conflicts.length} need your decision below.`;
+    $('#import-conflicts-list').innerHTML = ui.renderImportConflicts(diff.conflicts);
+    $('#import-conflicts-dialog').showModal();
+  };
+  reader.onerror = () => banner('error', 'Could not read that file', 'The file could not be read from disk.');
+  reader.readAsText(file);
+}
+
+function finishImport(added, unchanged, keptCurrent, usedImported) {
+  state.merchantRules = loadMerchantRules(state.seed.merchantRules);
+  recategorize();
+  render();
+  const parts = [];
+  if (added) parts.push(`${added} new rule${added === 1 ? '' : 's'} added`);
+  if (usedImported) parts.push(`${usedImported} replaced with the imported value`);
+  if (keptCurrent) parts.push(`${keptCurrent} kept as-is`);
+  if (unchanged) parts.push(`${unchanged} already matched`);
+  banner('', 'Import complete', parts.length ? `${parts.join('; ')}.` : 'Nothing changed.');
+}
+
 /* -------------------------------------------------------------- exporting */
 
 function generatePackage() {
@@ -400,6 +459,35 @@ function wireEvents() {
     downloadEmail($('#email-dialog').dataset.text || '', state.cycle);
   });
 
+  // Merchant-overrides import: file picked -> parse -> diff -> either apply
+  // straight away (no conflicts) or open the resolution dialog (handled in the
+  // click delegate above and importOverridesFromFile).
+  $('#import-overrides-file').addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file next time
+    if (file) importOverridesFromFile(file);
+  });
+
+  // The dialog is a <form method="dialog">, so both buttons close it; only
+  // 'apply' should actually write anything.
+  $('#import-conflicts-dialog').addEventListener('close', (e) => {
+    const dialog = e.target;
+    if (dialog.returnValue !== 'apply' || !pendingImport) { pendingImport = null; return; }
+    const { diff } = pendingImport;
+    pendingImport = null;
+
+    const resolutions = {};
+    let keptCurrent = 0;
+    let usedImported = 0;
+    for (const c of diff.conflicts) {
+      const picked = dialog.querySelector(`input[name="resolve-${CSS.escape(c.pattern)}"]:checked`)?.value || 'keep';
+      resolutions[c.pattern] = picked;
+      if (picked === 'use-imported') usedImported += 1; else keptCurrent += 1;
+    }
+    applyMerchantOverridesDiff(diff, resolutions);
+    finishImport(diff.added.length, diff.unchanged.length, keptCurrent, usedImported);
+  });
+
   // Delegated: category assignment, acknowledgement, rule edits, filters.
   document.addEventListener('change', (e) => {
     const assign = e.target.closest('.assign-category');
@@ -476,6 +564,8 @@ function wireEvents() {
       return;
     }
     if (e.target.id === 'export-lookup') exportLookupTable(state.merchantRules);
+    if (e.target.id === 'export-overrides') exportOverrides();
+    if (e.target.id === 'import-overrides') $('#import-overrides-file').click();
   });
 
   let searchTimer;

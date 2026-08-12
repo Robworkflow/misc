@@ -139,6 +139,39 @@ one-off local merchants that genuinely need a human decision.
 Edit the table from the **Lookup table** tab, or inline from any unmapped
 transaction row or flag. Edits persist to `localStorage` and survive a re-seed.
 
+### Backing up and moving your overrides
+
+Category assignments are `localStorage`, scoped to one browser on one machine —
+they do not sync to another device or browser, and are gone if that browser's
+site data is cleared. The **Lookup table** tab has two buttons for this:
+
+- **Export your overrides (JSON)** — downloads every category assignment you've
+  made, as a portable file. Nothing else (the seed rules, suggestions) is in it —
+  just your decisions.
+- **Import overrides…** — loads a previously exported file back in, on this
+  browser or a different one.
+
+Import **merges**, it never overwrites wholesale. Three outcomes per rule in the
+imported file:
+
+1. **New pattern** → added automatically, nothing to decide.
+2. **Same pattern, same category/spend-type/etc. as what's already here** →
+   no-op, already matches.
+3. **Same pattern, a different value** → a **conflict**. Nothing is picked for
+   you — a dialog lists every conflicting rule with both values side by side,
+   defaults to *Keep current*, and only applies what you explicitly choose.
+   Cancelling leaves everything exactly as it was.
+
+That third case is the one worth being deliberate about: silently preferring
+either side (always keep local, always trust the import) is exactly the kind of
+guess this tool is built to avoid making on your behalf.
+
+**Not yet built:** folding a finished categorisation pass into `data/seed.json`
+itself, so a fresh browser with no `localStorage` history has it pre-loaded
+without an import step. That's a bigger change — new curated rules going through
+the same regression-gate review as everything else in `build_seed.py` — and is
+deliberately deferred until there's a real, finished manual pass to fold in.
+
 ### Suggestions
 
 The lookup table can only learn a merchant that repeats, and **84% of the

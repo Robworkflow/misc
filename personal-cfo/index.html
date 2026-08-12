@@ -52,6 +52,9 @@
   <section class="panel" data-panel="merchants" hidden></section>
 </div>
 
+<!-- Hidden — triggered by the "Import overrides" button. -->
+<input type="file" id="import-overrides-file" accept="application/json" hidden>
+
 <dialog id="settings-dialog">
   <form method="dialog">
     <div class="dlg-head"><h3>Settings</h3></div>
@@ -72,6 +75,26 @@
       <button class="btn" id="settings-reset" value="reset">Reset ingest history</button>
       <button class="btn" value="cancel">Cancel</button>
       <button class="btn btn-primary" id="settings-save" value="save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="import-conflicts-dialog">
+  <form method="dialog">
+    <div class="dlg-head">
+      <h3>Some imported rules disagree with what's here</h3>
+      <p class="hint" style="margin-top:4px" id="import-conflicts-summary"></p>
+    </div>
+    <div class="dlg-body">
+      <p class="hint" style="margin:0 0 10px">
+        Each row below exists in both places with a different value. Nothing is picked for you — choose per row,
+        then Apply. Anything not in conflict was already merged automatically.
+      </p>
+      <div id="import-conflicts-list"></div>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn" value="cancel">Cancel import</button>
+      <button class="btn btn-primary" id="import-conflicts-apply" value="apply">Apply</button>
     </div>
   </form>
 </dialog>

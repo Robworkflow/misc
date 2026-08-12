@@ -455,11 +455,18 @@ export function renderMerchants(el, state) {
       <span class="spacer"></span>
       <span class="hint">${rules.length} of ${merchantRules.length} rules</span>
       <button class="btn btn-sm" id="export-lookup">Export CSV</button>
+      <button class="btn btn-sm" id="export-overrides">Export your overrides (JSON)</button>
+      <button class="btn btn-sm" id="import-overrides">Import overrides…</button>
     </div>
     <p class="hint" style="margin:-4px 0 14px">
       A merchant is matched by pattern against a normalised form of the statement description, so every billing
       variant of the same merchant collapses to one name. The longest matching pattern wins. Anything with no match
       is tagged Unmapped and flagged — never guessed into a category.
+    </p>
+    <p class="hint" style="margin:-4px 0 14px">
+      Category assignments live only in this browser's local storage — they do not sync across devices and are lost
+      if this browser's site data is cleared. <strong>Export your overrides</strong> after a categorisation session
+      to back them up; <strong>Import</strong> merges a backup back in, asking before anything conflicting is changed.
     </p>
     <div class="table-wrap">
       <table>
@@ -484,6 +491,35 @@ export function renderMerchants(el, state) {
         </tbody>
       </table>
     </div>`;
+}
+
+function fmtRule(r) {
+  const parts = [r.category || '(none)'];
+  if (r.spendType) parts.push(r.spendType);
+  if (r.recurringType) parts.push(r.recurringType);
+  return parts.join(' · ');
+}
+
+/**
+ * The conflict-resolution list for the import dialog. Every row defaults to
+ * "Keep current" — importing never overwrites a local decision unless this
+ * box is explicitly switched, and the switch is visible per row, not a global
+ * silent default baked into the merge logic.
+ */
+export function renderImportConflicts(conflicts) {
+  if (!conflicts.length) return '<p class="hint">No conflicts.</p>';
+  return conflicts.map((c) => `
+    <div class="conflict-row">
+      <div class="conflict-head"><code>${esc(c.pattern)}</code></div>
+      <label class="conflict-option">
+        <input type="radio" name="resolve-${esc(c.pattern)}" value="keep" checked>
+        Keep current — <span class="muted">${esc(fmtRule(c.existing))}</span>
+      </label>
+      <label class="conflict-option">
+        <input type="radio" name="resolve-${esc(c.pattern)}" value="use-imported">
+        Use imported — <span class="muted">${esc(fmtRule(c.incoming))}</span>
+      </label>
+    </div>`).join('');
 }
 
 export function setTabCounts(result, acked) {

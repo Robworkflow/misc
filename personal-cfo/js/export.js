@@ -277,6 +277,51 @@ export function downloadEmail(text, cycle) {
   download(new Blob([text], { type: 'text/plain' }), `Melanie summary ${cycle}.txt`);
 }
 
+/**
+ * Export merchant overrides — the category assignments made in-app — as a
+ * portable JSON file. This is the durability story: `localStorage` is tied to
+ * one browser on one machine, so a manual categorisation pass is one cleared
+ * cache away from gone unless it is exported somewhere durable.
+ */
+export function buildMerchantOverridesExport(overrides) {
+  return {
+    app: 'personal-cfo',
+    kind: 'merchant-overrides',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    count: Object.keys(overrides).length,
+    overrides,
+  };
+}
+
+export function downloadMerchantOverrides(overrides) {
+  const payload = buildMerchantOverridesExport(overrides);
+  const stamp = new Date().toISOString().slice(0, 10);
+  download(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }),
+    `Personal CFO merchant overrides ${stamp}.json`);
+}
+
+/**
+ * Parse and sanity-check an imported overrides file. Throws with a message fit
+ * to show the user directly rather than a stack trace — this file may have come
+ * from a different machine, a different session, or been hand-edited.
+ */
+export function parseMerchantOverridesFile(text) {
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    throw new Error('That file is not valid JSON.');
+  }
+  if (!payload || typeof payload !== 'object' || payload.kind !== 'merchant-overrides') {
+    throw new Error('That file does not look like a Personal CFO merchant overrides export (missing or wrong "kind").');
+  }
+  if (!payload.overrides || typeof payload.overrides !== 'object') {
+    throw new Error('That file has no "overrides" data to import.');
+  }
+  return payload;
+}
+
 /** Export the merchant lookup table on its own, for editing outside the app. */
 export function exportLookupTable(rules) {
   const header = 'Pattern,Display Name,Category,Recurring Type,Cadence,Spend Type,Person,Source';
