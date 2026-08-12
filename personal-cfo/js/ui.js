@@ -18,6 +18,7 @@ const SEVERITY_LABEL = {
   serious: 'Above baseline',
   warning: 'Needs review',
   good: 'Improved',
+  info: 'For information',
 };
 
 const TYPE_LABEL = {
@@ -28,6 +29,7 @@ const TYPE_LABEL = {
   'category-overspend': 'Category over baseline',
   'unmapped-merchant': 'Unmapped merchant',
   'missing-statement': 'Missing statement',
+  'reviewed-excluded': 'Reviewed one-time items',
 };
 
 /* --------------------------------------------------------------- overview */
@@ -149,22 +151,23 @@ export function renderTransactions(el, state) {
         <thead>
           <tr>
             <th>Date</th><th>Merchant</th><th>Category</th><th>Account</th>
-            <th>Type</th><th class="num">Amount</th>
+            <th>Type</th><th class="num">Amount</th><th></th>
           </tr>
         </thead>
         <tbody>
-          ${rows.length ? rows.slice(0, 500).map((t) => transactionRow(t, categories)).join('')
-    : '<tr><td colspan="6"><div class="empty">No transactions match these filters.</div></td></tr>'}
+          ${rows.length ? rows.slice(0, 500).map((t) => transactionRow(t, categories, state.reviewed)).join('')
+    : '<tr><td colspan="7"><div class="empty">No transactions match these filters.</div></td></tr>'}
         </tbody>
       </table>
     </div>
     ${rows.length > 500 ? `<p class="hint" style="margin-top:10px">Showing the first 500 of ${rows.length.toLocaleString()}. Narrow the filters to see the rest.</p>` : ''}`;
 }
 
-function transactionRow(t, categories) {
+function transactionRow(t, categories, reviewed) {
   const unmapped = t.unmapped;
+  const isReviewed = reviewed?.has(t.fingerprint);
   return `
-    <tr class="${unmapped ? 'row-unmapped' : ''}">
+    <tr class="${unmapped ? 'row-unmapped' : ''} ${isReviewed ? 'row-reviewed' : ''}">
       <td class="nowrap">${esc(t.date)}</td>
       <td class="desc">
         <div>${esc(t.merchant || t.description)}</div>
@@ -183,6 +186,13 @@ function transactionRow(t, categories) {
       <td class="nowrap muted">${esc(t.spendType || '')}</td>
       <td class="num nowrap" style="${t.flow === 'Income' ? 'color:#4ec44e' : ''}">
         ${t.flow === 'Income' ? '+' : ''}${money(t.amount, 2)}
+      </td>
+      <td class="nowrap">
+        ${isReviewed ? '<span class="badge badge-info" title="Held out of baselines and month-over-month comparisons">Reviewed</span> ' : ''}
+        <button class="btn btn-sm toggle-reviewed" data-fp="${esc(t.fingerprint)}"
+          title="${isReviewed ? 'Put this charge back into the comparisons' : 'Confirm this is a legitimate one-off and keep it out of baselines'}">
+          ${isReviewed ? 'Undo' : 'Mark reviewed'}
+        </button>
       </td>
     </tr>`;
 }
@@ -250,6 +260,10 @@ function flagCard(flag, isAcked, categories) {
         <div class="detail">${esc(flag.detail)}</div>
         ${numbers.length ? `<div class="hint" style="margin-top:6px">${esc(numbers.join('  ·  '))}</div>` : ''}
         ${flag.caveat ? `<div class="caveat">⚠ ${esc(flag.caveat)}</div>` : ''}
+        ${flag.items?.length ? `
+          <ul class="flag-items">
+            ${flag.items.map((i) => `<li>${esc(i.date)} · ${esc(i.accountName || '')} · ${money(i.amount, 2)} — ${esc(i.description.slice(0, 60))}</li>`).join('')}
+          </ul>` : ''}
         ${flag.type === 'unmapped-merchant' ? `
           <div class="fix">
             <span class="hint">Map <code>${esc(flag.suggestedPattern)}</code> to:</span>

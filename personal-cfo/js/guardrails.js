@@ -11,7 +11,7 @@
 //   4. one of the 7 accounts has no statement for the cycle
 
 import { ACCOUNTS, THRESHOLDS, NON_SPEND_CATEGORIES, UNMAPPED } from './config.js';
-import { groupUnmapped } from './merchants.js';
+import { groupUnmapped, txnFingerprint } from './merchants.js';
 
 export const monthOf = (date) => String(date || '').slice(0, 7);
 
@@ -153,10 +153,18 @@ const pct = (n) => `${(n * 100).toFixed(1)}%`;
  * Run every guardrail for a cycle and return a flat, sorted flag list.
  * Flags are informational: each carries what tripped it, the subject, and numbers.
  */
-export function evaluate({ transactions, statements, cycle }) {
+export function evaluate({ transactions, statements, cycle, reviewed = new Set() }) {
   const flags = [];
   const cycleTxns = transactions.filter((t) => monthOf(t.date) === cycle);
   const prev = addMonths(cycle, -1);
+
+  // Charges confirmed as one-offs are held out of every comparison — both the
+  // baselines and the current month — so a verified one-time item neither trips
+  // a flag now nor becomes the yardstick for future months. They stay in
+  // `cycleTxns`, so the ledger and the totals still show them in full.
+  const isReviewed = (t) => reviewed.has(txnFingerprint(t));
+  const compared = reviewed.size ? transactions.filter((t) => !isReviewed(t)) : transactions;
+  const comparedCycle = cycleTxns.filter((t) => !isReviewed(t));
 
   // Which accounts actually contributed data in each month. If a month is missing
   // accounts the other month has, every comparison across the two is skewed — the
@@ -172,7 +180,7 @@ export function evaluate({ transactions, statements, cycle }) {
     : null;
 
   /* --- 1. subscription month-over-month movement --------------------------- */
-  const subs = subscriptionSeries(transactions, cycle);
+  const subs = subscriptionSeries(compared, cycle);
   const current = subs.series.at(-1)?.value || 0;
   const previous = subs.series.at(-2)?.value || 0;
   if (previous > 0) {
@@ -239,7 +247,7 @@ export function evaluate({ transactions, statements, cycle }) {
   /* --- 1b. recurring bills ------------------------------------------------- */
   // Same movement test, reported separately from subscriptions so the two
   // numbers stay readable.
-  const bills = subscriptionSeries(transactions, cycle, THRESHOLDS.baselineMonths + 1, 'bill');
+  const bills = subscriptionSeries(compared, cycle, THRESHOLDS.baselineMonths + 1, 'bill');
   for (const bill of bills.subscriptions) {
     if (bill.previous <= 0 || bill.current <= 0) continue;
     const delta = (bill.current - bill.previous) / bill.previous;
@@ -258,9 +266,9 @@ export function evaluate({ transactions, statements, cycle }) {
   }
 
   /* --- 2. category over trailing-12-month baseline -------------------------- */
-  const { baselines, window } = categoryBaselines(transactions, cycle);
+  const { baselines, window } = categoryBaselines(compared, cycle);
   const cycleByCategory = new Map();
-  for (const t of cycleTxns) {
+  for (const t of comparedCycle) {
     if (!isSpend(t)) continue;
     cycleByCategory.set(t.category, (cycleByCategory.get(t.category) || 0) + t.amount);
   }
@@ -284,7 +292,7 @@ export function evaluate({ transactions, statements, cycle }) {
   }
 
   /* --- 3. unmapped merchants ----------------------------------------------- */
-  for (const group of groupUnmapped(cycleTxns)) {
+  for (const group of groupUnmapped(comparedCycle)) {
     flags.push({
       id: `unmapped-${group.key}-${cycle}`,
       type: 'unmapped-merchant',
@@ -314,15 +322,34 @@ export function evaluate({ transactions, statements, cycle }) {
     });
   }
 
-  const order = { critical: 0, serious: 1, warning: 2, good: 3 };
+  /* --- disclosure: what was held out of the comparisons ------------------- */
+  const heldOut = cycleTxns.filter(isReviewed);
+  if (heldOut.length) {
+    const total = heldOut.reduce((sum, t) => sum + t.amount, 0);
+    flags.push({
+      id: `reviewed-${cycle}`,
+      type: 'reviewed-excluded',
+      severity: 'info',
+      title: `${heldOut.length} reviewed one-time item${heldOut.length === 1 ? '' : 's'} held out of this cycle's comparisons`,
+      detail: `${money(total)} across ${heldOut.length} charge${heldOut.length === 1 ? '' : 's'} marked as verified one-offs. They remain in the ledger and in every total; only the baseline and month-over-month comparisons skip them.`,
+      numbers: { current: total, count: heldOut.length },
+      subject: 'Reviewed items',
+      items: heldOut.map((t) => ({
+        date: t.date, amount: t.amount, description: t.description, accountName: t.accountName,
+      })),
+    });
+  }
+
+  const order = { critical: 0, serious: 1, warning: 2, good: 3, info: 4 };
   flags.sort((a, b) => (order[a.severity] - order[b.severity])
     || (Math.abs(b.numbers?.current || 0) - Math.abs(a.numbers?.current || 0)));
 
-  return { flags, subscriptions: subs, bills, baselines, coverage, window, cycleTxns };
+  return { flags, subscriptions: subs, bills, baselines, coverage, window, cycleTxns, heldOut };
 }
 
 /** Spend by category for a cycle, with baseline comparison, for the charts. */
-export function categoryBreakdown(transactions, cycle) {
+export function categoryBreakdown(transactions, cycle, reviewed = new Set()) {
+  if (reviewed.size) transactions = transactions.filter((t) => !reviewed.has(txnFingerprint(t)));
   const { baselines } = categoryBaselines(transactions, cycle);
   const totals = new Map();
   for (const t of transactions) {
@@ -343,7 +370,8 @@ export function categoryBreakdown(transactions, cycle) {
 }
 
 /** Monthly totals per category across a window, for the trend chart. */
-export function categoryTrend(transactions, cycle, months = THRESHOLDS.baselineMonths, topN = 7) {
+export function categoryTrend(transactions, cycle, months = THRESHOLDS.baselineMonths, topN = 7, reviewed = new Set()) {
+  if (reviewed.size) transactions = transactions.filter((t) => !reviewed.has(txnFingerprint(t)));
   const window = monthRange(cycle, months);
   const inWindow = new Set(window);
   const byCategory = new Map();

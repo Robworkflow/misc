@@ -30,6 +30,19 @@ export function signature(desc) {
 }
 
 /**
+ * Stable identity for a single transaction.
+ *
+ * Used both to de-duplicate statement rows against the workbook and to mark an
+ * individual charge as reviewed. It deliberately pins the date, the exact amount
+ * and the normalised description, so marking one charge reviewed can never carry
+ * over to another — a later transfer of a different size, or on a different day,
+ * is a different fingerprint and still gets evaluated.
+ */
+export function txnFingerprint(t) {
+  return `${t.date}|${Math.round(t.amount * 100)}|${signature(t.description)}|${t.accountId || t.accountName || ''}`;
+}
+
+/**
  * Match a description against the lookup table.
  * Longest pattern wins, so a specific rule beats a general one
  * ("GOOGLEWORKSPACE" beats "GOOGLE").

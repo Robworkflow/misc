@@ -70,6 +70,7 @@ yourself, per the PRD's decision that direct write-back is not reliable.
 | Missing statement | Any of the 7 accounts has no data for the cycle |
 | New / stopped subscription | A subscription bills for the first time, or stops billing |
 | Recurring bill change | A recurring bill moves ≥ 10% month over month |
+| Reviewed items held out | Informational: lists any verified one-time charges excluded from this cycle's comparisons |
 
 Thresholds live in `js/config.js` (`THRESHOLDS`).
 
@@ -86,6 +87,20 @@ subscriptions feed the subscription guardrail. The split is the `BILLS` set in
 **Baselines exclude transfers.** Moving six figures between the household's own
 accounts is not spending. `NON_SPEND_CATEGORIES` in `js/config.js` keeps
 `Transfers` and `Income` out of every baseline and category flag.
+
+**Verified one-time items can be held out of comparisons.** A legitimate one-off
+— a loan repayment, a holiday, a boat — will breach its category baseline, and
+worse, it becomes the yardstick every future month is measured against. Marking a
+charge **Reviewed** (the button on any row in the Transactions tab) keeps that
+single charge out of the baselines and the month-over-month maths.
+
+It is scoped to one transaction, identified by date + exact amount + normalised
+description + account. It is not a rule, not a merchant, and not a threshold, so
+a different large charge later is still evaluated normally. Reviewed charges stay
+in the ledger, in every total, and in the exported workbook — only the
+comparisons skip them, and each cycle raises an informational flag listing
+exactly what was held out, so nothing is ever silently absorbed. The state
+persists in `localStorage` and is reversible from the same button.
 
 **Comparisons state when they are unreliable.** If an account reported last month
 but not this month, any month-over-month number is skewed. The flag still fires,

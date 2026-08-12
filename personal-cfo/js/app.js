@@ -5,9 +5,10 @@ import {
   store, loadMerchantRules, saveMerchantOverride, removeMerchantRule,
   ingestRegistry, recordIngest, forgetIngests,
   acknowledgedFlags, acknowledgeFlag, unacknowledgeFlag,
+  reviewedSet, markReviewed, unmarkReviewed,
   cacheTransactions, cachedTransactions,
 } from './store.js';
-import { compile, categorize, signature } from './merchants.js';
+import { compile, categorize, txnFingerprint } from './merchants.js';
 import { parseStatement, parseMasterWorkbook } from './parse.js';
 import { evaluate, categoryTrend, categoryBreakdown, monthOf } from './guardrails.js';
 import * as drive from './drive.js';
@@ -30,6 +31,7 @@ const state = {
   cycles: [],
   result: null,
   acked: new Set(),
+  reviewed: new Set(),
   corrections: [],
   newTransactions: [],
   activeTab: 'overview',
@@ -65,9 +67,12 @@ function recategorize() {
   const byName = new Map(ACCOUNTS.map((a) => [a.name, a]));
   const byId = new Map(ACCOUNTS.map((a) => [a.id, a]));
 
+  state.reviewed = reviewedSet();
   state.transactions = state.rawTransactions.map((t) => {
     const account = byId.get(t.accountId) || byName.get(t.accountName) || null;
-    return categorize({ ...t, accountId: t.accountId || account?.id || null }, index, account);
+    const categorized = categorize({ ...t, accountId: t.accountId || account?.id || null }, index, account);
+    // Computed once here so the table and the engine agree on identity.
+    return { ...categorized, fingerprint: txnFingerprint(categorized) };
   });
 
   state.cycles = [...new Set(state.transactions.map((t) => monthOf(t.date)).filter(Boolean))].sort();
@@ -79,6 +84,7 @@ function recategorize() {
     transactions: state.transactions,
     statements: state.statements,
     cycle: state.cycle,
+    reviewed: state.reviewed,
   });
   cacheTransactions(state.rawTransactions);
 }
@@ -114,13 +120,13 @@ function render() {
 }
 
 function drawCharts() {
-  const trend = categoryTrend(state.transactions, state.cycle);
+  const trend = categoryTrend(state.transactions, state.cycle, undefined, undefined, state.reviewed);
   const breached = new Set(
     state.result.flags.filter((f) => f.type === 'category-overspend').map(() => state.cycle),
   );
   charts.categoryTrendChart('chart-category-trend', trend, breached);
   charts.subscriptionTrendChart('chart-sub-trend', state.result.subscriptions.series, THRESHOLDS.subscriptionMoMPct);
-  charts.categoryVsBaselineChart('chart-category-baseline', categoryBreakdown(state.transactions, state.cycle));
+  charts.categoryVsBaselineChart('chart-category-baseline', categoryBreakdown(state.transactions, state.cycle, state.reviewed));
   charts.accountChart('chart-accounts', state.result.coverage);
 }
 
@@ -217,8 +223,8 @@ async function ingestNew() {
 
   // De-duplicate against what is already loaded: the workbook and the statements
   // overlap for months that were already entered by hand.
-  const existing = new Set(state.rawTransactions.map(fingerprint));
-  const fresh = added.filter((t) => !existing.has(fingerprint(t)));
+  const existing = new Set(state.rawTransactions.map(txnFingerprint));
+  const fresh = added.filter((t) => !existing.has(txnFingerprint(t)));
 
   state.rawTransactions.push(...fresh);
   state.newTransactions = fresh;
@@ -232,7 +238,7 @@ async function ingestNew() {
   $('#btn-ingest').disabled = true;
 }
 
-const fingerprint = (t) => `${t.date}|${Math.round(t.amount * 100)}|${signature(t.description)}|${t.accountId || t.accountName}`;
+
 
 /* --------------------------------------------------------- lookup editing */
 
@@ -274,6 +280,7 @@ function generatePackage() {
     cycle: state.cycle,
     merchantRules: state.merchantRules,
     newTransactions: state.newTransactions,
+    reviewed: state.reviewed,
   }, window.XLSX);
 
   const ingestedThisRun = Object.entries(state.ingested)
@@ -288,6 +295,7 @@ function generatePackage() {
     ingested: ingestedThisRun,
     coverage: state.result.coverage,
     corrections: state.corrections,
+    heldOut: state.result.heldOut,
   });
   downloadChangelog(changelog, state.cycle);
   banner('', 'Update package generated',
@@ -323,7 +331,9 @@ function wireEvents() {
   $('#cycle-select').addEventListener('change', (e) => {
     state.cycle = e.target.value;
     state.acked = acknowledgedFlags(state.cycle);
-    state.result = evaluate({ transactions: state.transactions, statements: state.statements, cycle: state.cycle });
+    state.result = evaluate({
+      transactions: state.transactions, statements: state.statements, cycle: state.cycle, reviewed: state.reviewed,
+    });
     render();
   });
 
@@ -391,6 +401,24 @@ function wireEvents() {
       if (state.acked.has(id)) { unacknowledgeFlag(state.cycle, id); state.acked.delete(id); }
       else { acknowledgeFlag(state.cycle, id); state.acked.add(id); }
       render();
+      return;
+    }
+    const rev = e.target.closest('.toggle-reviewed');
+    if (rev) {
+      const fp = rev.dataset.fp;
+      const txn = state.transactions.find((t) => t.fingerprint === fp);
+      if (state.reviewed.has(fp)) {
+        unmarkReviewed(fp);
+        status('Charge put back into the baseline comparisons.');
+      } else {
+        markReviewed(fp, txn ? {
+          date: txn.date, amount: txn.amount, description: txn.description, accountName: txn.accountName,
+        } : {});
+        status('Marked as a reviewed one-time item. It stays in your totals but is held out of baselines and month-over-month comparisons.');
+      }
+      recategorize();
+      render();
+      setTimeout(() => status(''), 5000);
       return;
     }
     const del = e.target.closest('.delete-rule');

@@ -1,0 +1,17 @@
+# Serve ES modules with a JavaScript MIME type.
+#
+# The dashboard loads pdf.js as a native ES module (vendor/pdf.min.mjs and its
+# worker). Apache does not map .mjs by default, so it goes out as
+# application/octet-stream and the browser refuses to execute it with a strict
+# MIME type error. Both mechanisms below are here on purpose: AddType covers the
+# common case, and the mod_headers block forces the value on hosts where an
+# upstream config has already claimed .mjs.
+
+AddType application/javascript .mjs
+AddType text/javascript .mjs
+
+<IfModule mod_headers.c>
+    <FilesMatch "\.mjs$">
+        Header set Content-Type "text/javascript"
+    </FilesMatch>
+</IfModule>

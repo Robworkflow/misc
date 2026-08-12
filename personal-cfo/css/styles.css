@@ -176,6 +176,7 @@ select:focus, input:focus { border-color: var(--accent); }
 .badge-good     { background: rgba(12,163,12,0.14); color: #4ec44e; border-color: rgba(12,163,12,0.4); }
 .badge-neutral  { background: var(--surface-3); color: var(--ink-2); border-color: var(--line-strong); }
 .badge-sub      { background: rgba(57,135,229,0.14); color: #7fb2f0; border-color: rgba(57,135,229,0.4); }
+.badge-info     { background: rgba(57,135,229,0.14); color: #7fb2f0; border-color: rgba(57,135,229,0.4); }
 
 /* ----------------------------------------------------------------- tables */
 
@@ -209,6 +210,19 @@ td.desc .raw {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 tr.row-unmapped { background: rgba(250,178,25,0.05); }
+/* A reviewed charge stays fully visible in the ledger — it is only held out of
+   the guardrail comparisons — so it is dimmed, never hidden. */
+tr.row-reviewed { opacity: 0.62; }
+tr.row-reviewed:hover { opacity: 1; }
+
+.flag-items {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.flag-items li { margin-bottom: 2px; }
 
 /* ------------------------------------------------------------------ flags */
 
@@ -225,6 +239,7 @@ tr.row-unmapped { background: rgba(250,178,25,0.05); }
 .flag.sev-serious  { border-left-color: var(--serious); }
 .flag.sev-warning  { border-left-color: var(--warning); }
 .flag.sev-good     { border-left-color: var(--good); }
+.flag.sev-info     { border-left-color: var(--accent); }
 .flag.acked { opacity: 0.45; }
 
 .flag .body { flex: 1; min-width: 0; }

@@ -26,7 +26,7 @@ function download(blob, filename) {
  * Build the updated workbook: full transaction register, the merchant lookup
  * table as it now stands, this cycle's flags, and the subscription view.
  */
-export function buildUpdatePackage({ transactions, flags, subscriptions, bills, coverage, cycle, merchantRules, newTransactions }, XLSX) {
+export function buildUpdatePackage({ transactions, flags, subscriptions, bills, coverage, cycle, merchantRules, newTransactions, reviewed = new Set() }, XLSX) {
   const wb = XLSX.utils.book_new();
 
   const txnRows = transactions
@@ -48,6 +48,9 @@ export function buildUpdatePackage({ transactions, flags, subscriptions, bills, 
       Month: monthOf(t.date),
       Year: Number(String(t.date).slice(0, 4)),
       Source: t.source,
+      // Reviewed one-offs stay in the register in full; the column records that
+      // they are held out of baseline and month-over-month comparisons.
+      Reviewed: reviewed.has(t.fingerprint) ? 'One-time (excluded from comparisons)' : '',
     }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(txnRows), 'Transactions');
 
@@ -132,7 +135,7 @@ function subRow(s) {
 }
 
 /** Human-readable changelog describing exactly what this cycle changed. */
-export function buildChangelog({ cycle, flags, newTransactions, ingested, coverage, corrections }) {
+export function buildChangelog({ cycle, flags, newTransactions, ingested, coverage, corrections, heldOut }) {
   const lines = [];
   const rule = '='.repeat(64);
   lines.push(rule, `PERSONAL CFO — CYCLE ${cycle}`, `Generated ${new Date().toLocaleString('en-CA')}`, rule, '');
@@ -154,6 +157,12 @@ export function buildChangelog({ cycle, flags, newTransactions, ingested, covera
 
   lines.push(`NEW TRANSACTIONS: ${newTransactions?.length || 0}`);
   lines.push('');
+
+  if (heldOut?.length) {
+    lines.push('REVIEWED ONE-TIME ITEMS (in the totals, held out of comparisons)');
+    heldOut.forEach((t) => lines.push(`  ${t.date}  ${money(t.amount).padStart(14)}  ${t.accountName} — ${t.description.slice(0, 50)}`));
+    lines.push('');
+  }
 
   if (corrections?.length) {
     lines.push('CATEGORY CORRECTIONS MADE THIS SESSION');

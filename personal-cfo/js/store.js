@@ -111,6 +111,50 @@ export function unacknowledgeFlag(cycle, flagId) {
   write(`ack:${cycle}`, [...acked]);
 }
 
+/* -------------------------------------------------- reviewed one-time items */
+
+/**
+ * Charges a human has checked and confirmed are legitimate one-offs.
+ *
+ * This is deliberately different from acknowledging a flag. Acknowledging says
+ * "I've seen this flag" and resets every cycle. Marking a charge reviewed says
+ * "this specific charge is verified and is not part of our recurring pattern",
+ * so it is kept out of baselines and comparisons permanently — otherwise a
+ * one-time loan repayment or a holiday becomes the yardstick every future month
+ * is measured against.
+ *
+ * It is scoped to one transaction fingerprint, never to a rule or a merchant, so
+ * a future large charge is still evaluated normally. Reviewed items stay visible
+ * in the ledger and in every total; only the guardrail comparisons skip them,
+ * and each cycle discloses which ones it skipped.
+ */
+export function reviewedItems() {
+  return read('reviewed', {});
+}
+
+export function reviewedSet() {
+  return new Set(Object.keys(read('reviewed', {})));
+}
+
+export function markReviewed(fingerprint, meta = {}) {
+  const items = read('reviewed', {});
+  items[fingerprint] = {
+    note: meta.note || '',
+    date: meta.date || '',
+    amount: meta.amount ?? null,
+    description: meta.description || '',
+    accountName: meta.accountName || '',
+    reviewedAt: new Date().toISOString(),
+  };
+  write('reviewed', items);
+}
+
+export function unmarkReviewed(fingerprint) {
+  const items = read('reviewed', {});
+  delete items[fingerprint];
+  write('reviewed', items);
+}
+
 /* ------------------------------------------------ parsed transaction cache */
 
 export function cacheTransactions(transactions) {
