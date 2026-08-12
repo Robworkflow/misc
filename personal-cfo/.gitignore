@@ -3,3 +3,5 @@ node_modules/
 *.xlsx
 !data/*.json
 .DS_Store
+__pycache__/
+*.pyc
