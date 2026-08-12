@@ -639,7 +639,11 @@ export function renderMerchants(el, state) {
                   ${categories.map((c) => `<option value="${esc(c)}" ${r.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
                 </select>
               </td>
-              <td>${r.recurringType ? `<span class="badge badge-${r.recurringType === 'subscription' ? 'sub' : 'neutral'}">${esc(r.recurringType)}</span>` : '<span class="muted">—</span>'}</td>
+              <td>${
+                ['bill', 'cellular'].includes(r.recurringType)
+                  ? `<span class="badge badge-neutral">${esc(r.recurringType)}</span>`
+                  : `<label class="sub-toggle" title="Track as subscription"><input type="checkbox" class="toggle-subscription" data-pattern="${esc(r.pattern)}"${r.recurringType === 'subscription' || r.isSubscription ? ' checked' : ''}> sub</label>`
+              }</td>
               <td class="muted">${esc(r.spendType || '—')}</td>
               <td class="muted">${esc(r.source || '—')}</td>
               <td><button class="btn btn-sm delete-rule" data-pattern="${esc(r.pattern)}">Remove</button></td>

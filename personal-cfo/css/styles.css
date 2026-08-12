@@ -177,6 +177,7 @@ select:focus, input:focus { border-color: var(--accent); }
 .badge-neutral  { background: var(--surface-3); color: var(--ink-2); border-color: var(--line-strong); }
 .badge-sub      { background: rgba(57,135,229,0.14); color: #7fb2f0; border-color: rgba(57,135,229,0.4); }
 .badge-info     { background: rgba(57,135,229,0.14); color: #7fb2f0; border-color: rgba(57,135,229,0.4); }
+.sub-toggle     { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
 
 /* ----------------------------------------------------------------- tables */
 

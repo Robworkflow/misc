@@ -332,8 +332,8 @@ function assignCategory(merchantKey, display, category) {
     category,
     spendType: null,
     person: null,
-    isSubscription: category === 'Subscriptions',
-    recurringType: category === 'Subscriptions' ? 'subscription' : null,
+    isSubscription: false,
+    recurringType: null,
     cadence: null,
     source: 'user',
   };
@@ -344,6 +344,20 @@ function assignCategory(merchantKey, display, category) {
   render();
   status(`Mapped "${display}" to ${category}. The lookup table now covers every matching charge.`);
   setTimeout(() => status(''), 4000);
+}
+
+function setRuleRecurring(pattern, trackAsSubscription) {
+  const rule = state.merchantRules.find((r) => r.pattern === pattern);
+  if (!rule) return;
+  saveMerchantOverride({
+    ...rule,
+    isSubscription: trackAsSubscription,
+    recurringType: trackAsSubscription ? 'subscription' : null,
+    source: 'user',
+  });
+  state.merchantRules = loadMerchantRules(state.seed.merchantRules);
+  recategorize();
+  render();
 }
 
 /* --------------------------------------------------- merchant overrides I/O */
@@ -554,6 +568,11 @@ function wireEvents() {
     if (edit) {
       const rule = state.merchantRules.find((r) => r.pattern === edit.dataset.pattern);
       if (rule) assignCategory(rule.pattern, rule.display, edit.value);
+      return;
+    }
+    const sub = e.target.closest('.toggle-subscription');
+    if (sub) {
+      setRuleRecurring(sub.dataset.pattern, sub.checked);
       return;
     }
     if (e.target.id === 'txn-account') { state.filter.account = e.target.value; render(); }
