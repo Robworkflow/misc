@@ -217,10 +217,20 @@ async function loadMaster() {
   const byName = new Map(ACCOUNTS.map((a) => [a.name, a]));
   const workbookRows = rows.map((r) => ({ ...r, accountId: byName.get(r.accountName)?.id || null }));
 
+  // Dedup workbook rows by fingerprint — duplicate entries in the master spreadsheet
+  // would otherwise create double-counting across every tab and report.
+  const seen = new Set();
+  const dedupedWorkbookRows = workbookRows.filter((r) => {
+    const fp = txnFingerprint(r);
+    if (seen.has(fp)) return false;
+    seen.add(fp);
+    return true;
+  });
+
   // Keep any statement-sourced transactions; replace the workbook baseline.
   state.rawTransactions = [
     ...state.rawTransactions.filter((t) => t.source === 'statement'),
-    ...workbookRows,
+    ...dedupedWorkbookRows,
   ];
   recategorize();
   render();
@@ -280,8 +290,16 @@ async function ingestNew() {
 
   // De-duplicate against what is already loaded: the workbook and the statements
   // overlap for months that were already entered by hand.
-  const existing = new Set(state.rawTransactions.map(txnFingerprint));
-  const fresh = added.filter((t) => !existing.has(txnFingerprint(t)));
+  // Workbook rows may lack accountId (name-only cache); resolve it so their
+  // fingerprints match the accountId-keyed fingerprints on statement rows.
+  const byName = new Map(ACCOUNTS.map((a) => [a.name, a]));
+  const resolvedFingerprint = (t) => {
+    if (t.accountId) return txnFingerprint(t);
+    const acc = byName.get(t.accountName);
+    return acc ? txnFingerprint({ ...t, accountId: acc.id }) : txnFingerprint(t);
+  };
+  const existing = new Set(state.rawTransactions.map(resolvedFingerprint));
+  const fresh = added.filter((t) => !existing.has(resolvedFingerprint(t)));
 
   state.rawTransactions.push(...fresh);
   state.newTransactions = fresh;
