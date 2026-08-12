@@ -215,6 +215,17 @@ tr.row-unmapped { background: rgba(250,178,25,0.05); }
 tr.row-reviewed { opacity: 0.62; }
 tr.row-reviewed:hover { opacity: 1; }
 
+.suggestion { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 6px; }
+
+/* Evidence for a suggestion. Deliberately quiet: it is there to be read before
+   accepting, not to make the guess look authoritative. */
+.why { color: var(--ink-muted); font-size: 11px; font-style: italic; }
+.why.caution { color: var(--warning); font-style: normal; }
+
+td.spendtype { font-size: 12px; }
+td.spendtype .btn-sm { margin-left: 6px; padding: 2px 7px; font-size: 11px; }
+td.spendtype .why { display: block; margin-top: 2px; }
+
 .flag-items {
   margin: 8px 0 0;
   padding-left: 18px;

@@ -231,6 +231,53 @@ CURATED = [
     ("AIRDOCTOR",        "AirDoctor",              "Home & Property", None, None, False, None),
     ("STONESTHROW",      "A Stone's Throw Pub",    "Dining & Food", None, None, False, None),
     ("GIANNISPIZZA",     "Giannis Pizza",          "Dining & Food", None, None, False, None),
+
+    # --- national chains -------------------------------------------------------
+    # These live here rather than in the suggestion lexicon on purpose. A chain is
+    # a specific merchant identity, not a category word, and one pattern here
+    # matches every store number and town it will ever appear under. The lexicon
+    # in js/suggest.js stays generic so its accuracy figure means what it says.
+    ("REXALL",            "Rexall",                "Health & Wellness", None, None, False, None),
+    ("ESSO",              "Esso",                  "Automotive", None, None, False, None),
+    ("PETROCAN",          "Petro-Canada",          "Automotive", None, None, False, None),
+    ("ULTRAMAR",          "Ultramar",              "Automotive", None, None, False, None),
+    ("PRINCESSAUTO",      "Princess Auto",         "Automotive", None, None, False, None),
+    ("LCBO",              "LCBO",                  "Dining & Food", None, None, False, None),
+    ("BEERSTORE",         "The Beer Store",        "Dining & Food", None, None, False, None),
+    ("STARBUCKS",         "Starbucks",             "Dining & Food", None, None, False, None),
+    ("SUBWAY",            "Subway",                "Dining & Food", None, None, False, None),
+    ("A&W",               "A&W",                   "Dining & Food", None, None, False, None),
+    ("WENDYS",            "Wendy\'s",               "Dining & Food", None, None, False, None),
+    ("DAIRYQUEEN",        "Dairy Queen",           "Dining & Food", None, None, False, None),
+    ("SWISSCHALET",       "Swiss Chalet",          "Dining & Food", None, None, False, None),
+    ("BOSTONPIZZA",       "Boston Pizza",          "Dining & Food", None, None, False, None),
+    ("HARVEYS",           "Harvey\'s",              "Dining & Food", None, None, False, None),
+    ("POPEYES",           "Popeyes",               "Dining & Food", None, None, False, None),
+    ("LOBLAWS",           "Loblaws",               "Groceries & Market", None, None, False, None),
+    ("NOFRILLS",          "No Frills",             "Groceries & Market", None, None, False, None),
+    ("FRESHCO",           "FreshCo",               "Groceries & Market", None, None, False, None),
+    ("LONGOS",            "Longo\'s",               "Groceries & Market", None, None, False, None),
+    ("STAPLES",           "Staples",               "Shopping & Clothing", None, None, False, None),
+    ("BESTBUY",           "Best Buy",              "Shopping & Clothing", None, None, False, None),
+    ("INDIGO",            "Indigo",                "Shopping & Clothing", None, None, False, None),
+    ("CHAPTERS",          "Chapters",              "Shopping & Clothing", None, None, False, None),
+    ("MARSHALLS",         "Marshalls",             "Shopping & Clothing", None, None, False, None),
+    ("OLDNAVY",           "Old Navy",              "Shopping & Clothing", None, None, False, None),
+    ("SPORTCHEK",         "Sport Chek",            "Shopping & Clothing", None, None, False, None),
+    ("LAVIEENROSE",       "La Vie en Rose",        "Shopping & Clothing", None, None, False, None),
+    ("LOWES",             "Lowe\'s",                "Home & Property", None, None, False, None),
+    ("IKEA",              "IKEA",                  "Home & Property", None, None, False, None),
+    ("WAYFAIR",           "Wayfair",               "Home & Property", None, None, False, None),
+    ("CINEPLEX",          "Cineplex",              "Entertainment", None, None, False, None),
+    ("TICKETMASTER",      "Ticketmaster",          "Entertainment", None, None, False, None),
+    ("WESTJET",           "WestJet",               "Travel", None, None, False, None),
+    ("AIRTRANSAT",        "Air Transat",           "Travel", None, None, False, None),
+    ("AMERICANAI",        "American Airlines",     "Travel", None, None, False, None),
+    ("EXPEDIA",           "Expedia",               "Travel", None, None, False, None),
+    ("BOOKINGCOM",        "Booking.com",           "Travel", None, None, False, None),
+    ("PRESTO",            "PRESTO Transit",        "Transportation", None, None, False, None),
+    ("GOTRANSIT",         "GO Transit",            "Transportation", None, None, False, None),
+    ("LYFT",              "Lyft",                  "Transportation", None, None, False, None),
 ]
 
 # Recurring charges split into two kinds. Both are tracked, but only 'subscription'

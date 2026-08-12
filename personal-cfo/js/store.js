@@ -155,6 +155,32 @@ export function unmarkReviewed(fingerprint) {
   write('reviewed', items);
 }
 
+/* ------------------------------------------------------ spend type overrides */
+
+/**
+ * Per-transaction Business/Personal overrides.
+ *
+ * Daniko cards default to Business because that is what they mostly are, but a
+ * default nobody can see or reverse is just a hidden assumption. These make the
+ * call explicit and per-charge: the row shows where the value came from, and one
+ * click changes it.
+ */
+export function spendTypeOverrides() {
+  return read('spendTypeOverrides', {});
+}
+
+export function setSpendTypeOverride(fingerprint, value) {
+  const all = read('spendTypeOverrides', {});
+  all[fingerprint] = value;
+  write('spendTypeOverrides', all);
+}
+
+export function clearSpendTypeOverride(fingerprint) {
+  const all = read('spendTypeOverrides', {});
+  delete all[fingerprint];
+  write('spendTypeOverrides', all);
+}
+
 /* ------------------------------------------------ parsed transaction cache */
 
 export function cacheTransactions(transactions) {

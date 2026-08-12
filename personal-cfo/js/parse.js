@@ -329,7 +329,9 @@ export async function parseStatement(buffer, account, pdfjsLib) {
       accountType: account.type,
       cardHolder: t.cardholder || account.holder,
       person: account.person,
-      spendType: account.defaultSpendType,
+      // spendType is deliberately not set here. Letting categorize() apply the
+      // account default means the row can say *why* it is Business — an account
+      // default rather than a per-charge decision — and can be flipped back.
       source: 'statement',
     })),
     period,

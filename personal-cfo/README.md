@@ -49,7 +49,9 @@ master workbook; it cannot modify anything in your Drive.
    date + amount + normalised description + account.
 3. **Categorise** — every transaction is resolved through the merchant lookup
    table. No match means `Unmapped` and a flag; a merchant is never guessed into
-   a category.
+   a category. Where the merchant's *name* says what it is, a suggestion is
+   offered with its evidence — as a one-click proposal, never as an applied
+   category.
 4. **Evaluate** — the guardrail rules run and produce the Flags list.
 5. **Hand off** — generate an update package (a new `.xlsx` plus a changelog) and
    a plain-language email draft for Melanie.
@@ -137,6 +139,49 @@ one-off local merchants that genuinely need a human decision.
 Edit the table from the **Lookup table** tab, or inline from any unmapped
 transaction row or flag. Edits persist to `localStorage` and survive a re-seed.
 
+### Suggestions
+
+The lookup table can only learn a merchant that repeats, and **84% of the
+unmapped merchants here appear exactly once** — a frequency rule will never reach
+them. So for anything still unmapped, `js/suggest.js` reads what the merchant
+name *says*: `SCOPA PIZZA MACTIER` → Dining & Food, evidence *name contains
+"pizza"*.
+
+**A suggestion is never applied.** It is shown with its evidence next to an
+Accept button, and it becomes a category only when a human clicks. There is no
+confidence threshold that unlocks auto-apply, and there is deliberately no such
+threshold to raise later. Until accepted, the charge stays `Unmapped` for every
+baseline, flag and chart.
+
+The lexicon is **generic words only** — PIZZA, PHARMACY, HOTEL. Brand names live
+in the curated rules instead, where one pattern already matches every store
+number and town. Keeping them apart is what makes the accuracy figure meaningful:
+measured against transactions whose category is fixed by a curated rule, the
+generic lexicon agreed **161 times out of 162 (99.4%)**, the one disagreement
+being a genuinely ambiguous resort.
+
+Today it offers a suggestion for about **18% of unmapped charges**. It does not
+eliminate review, and is not meant to — it turns "pick from 18 categories" into
+"accept or override".
+
+### Spend type: Business vs Personal
+
+Daniko cards (Daniko Bank, Daniko Rob Visa, Daniko Mel Visa) **default to
+Business**, resolving the PRD's open question. Daniko cards carry personal
+charges by design, so the default is never hidden: every row shows where its
+Business/Personal value came from —
+
+| Label | Meaning |
+|---|---|
+| `account default` | Defaulted from the card, not decided per charge |
+| `from lookup rule` | Set by a merchant rule (e.g. Netflix is Personal) |
+| `from workbook` / `from statement` | Came in with the imported row |
+| `set by you` | You overrode it for this one charge |
+
+Any row can be flipped with one click, and a `reset` button returns it to the
+default. Overrides are per-transaction, persist in `localStorage`, and are
+exported in a `Spend Type Source` column.
+
 Regenerate the seed after changing `build_seed.py`:
 
 ```bash
@@ -163,7 +208,23 @@ Three RBC layouts are supported, handled by two parsers:
   statement also prints the date twice on some rows (posted and effective) and
   shifts its whole table left on continuation pages.
 
-### Verification
+### Verifying categorization
+
+Changing normalization, the lookup table or the suggestion engine must never move
+a category that is already assigned. That is enforced, not assumed:
+
+```bash
+node tools/test-categorization.mjs history.json
+```
+
+It compares against `tools/categorization-baseline.json` — a hashed digest, so
+the repo never carries the raw ledger — and fails on any changed or lost
+category. Newly *resolved* transactions are reported as an improvement, not a
+failure. It has already earned its keep: it caught a `CANADIAN TIRE` brand rule
+that would have moved five charges from Home & Property to Automotive, and those
+rules were dropped rather than overriding history.
+
+### Verifying statement parsing
 
 Every parse is checked against the control totals the statement itself prints,
 which is the only check that actually proves a parser is right:
@@ -213,7 +274,10 @@ js/export.js          update package, changelog, email draft
 js/ui.js              view rendering
 js/app.js             orchestration
 data/seed.json        generated lookup table
+js/suggest.js         name-based category suggestions (proposals only)
 tools/build_seed.py   regenerates data/seed.json from the master workbook
+tools/test-categorization.mjs  regression gate: no assigned category may change
+tools/categorization-baseline.json  hashed snapshot the gate compares against
 tools/test-parsers.mjs  quick parse dump for one PDF
 tools/reconcile.mjs   checks a parse against the statement's printed totals
 vendor/               Chart.js, SheetJS, pdf.js

@@ -6,9 +6,11 @@ import {
   ingestRegistry, recordIngest, forgetIngests,
   acknowledgedFlags, acknowledgeFlag, unacknowledgeFlag,
   reviewedSet, markReviewed, unmarkReviewed,
+  spendTypeOverrides, setSpendTypeOverride, clearSpendTypeOverride,
   cacheTransactions, cachedTransactions,
 } from './store.js';
 import { compile, categorize, txnFingerprint } from './merchants.js';
+import { suggestAll, suggestCategory } from './suggest.js';
 import { parseStatement, parseMasterWorkbook } from './parse.js';
 import { evaluate, categoryTrend, categoryBreakdown, monthOf } from './guardrails.js';
 import * as drive from './drive.js';
@@ -32,6 +34,8 @@ const state = {
   result: null,
   acked: new Set(),
   reviewed: new Set(),
+  suggestions: new Map(),   // fingerprint -> { category, evidence, caution }
+  spendOverrides: {},
   corrections: [],
   newTransactions: [],
   activeTab: 'overview',
@@ -68,12 +72,23 @@ function recategorize() {
   const byId = new Map(ACCOUNTS.map((a) => [a.id, a]));
 
   state.reviewed = reviewedSet();
+  state.spendOverrides = spendTypeOverrides();
   state.transactions = state.rawTransactions.map((t) => {
     const account = byId.get(t.accountId) || byName.get(t.accountName) || null;
     const categorized = categorize({ ...t, accountId: t.accountId || account?.id || null }, index, account);
     // Computed once here so the table and the engine agree on identity.
-    return { ...categorized, fingerprint: txnFingerprint(categorized) };
+    const fingerprint = txnFingerprint(categorized);
+    const override = state.spendOverrides[fingerprint];
+    return {
+      ...categorized,
+      fingerprint,
+      spendType: override || categorized.spendType,
+      spendTypeSource: override ? 'user' : categorized.spendTypeSource,
+    };
   });
+
+  // Proposals only. Nothing here is written to a category — see js/suggest.js.
+  state.suggestions = suggestAll(state.transactions);
 
   state.cycles = [...new Set(state.transactions.map((t) => monthOf(t.date)).filter(Boolean))].sort();
   if (!state.cycle || !state.cycles.includes(state.cycle)) {
@@ -86,6 +101,13 @@ function recategorize() {
     cycle: state.cycle,
     reviewed: state.reviewed,
   });
+  for (const flag of state.result.flags) {
+    if (flag.type !== 'unmapped-merchant' || !flag.example) continue;
+    flag.suggestion = suggestCategory({
+      description: flag.example, amount: flag.numbers?.current || 0, flow: 'Expense',
+    });
+  }
+
   cacheTransactions(state.rawTransactions);
 }
 
@@ -281,6 +303,7 @@ function generatePackage() {
     merchantRules: state.merchantRules,
     newTransactions: state.newTransactions,
     reviewed: state.reviewed,
+    suggestions: state.suggestions,
   }, window.XLSX);
 
   const ingestedThisRun = Object.entries(state.ingested)
@@ -296,6 +319,7 @@ function generatePackage() {
     coverage: state.result.coverage,
     corrections: state.corrections,
     heldOut: state.result.heldOut,
+    pendingSuggestions: state.result.cycleTxns.filter((t) => t.unmapped && state.suggestions.has(t.fingerprint)).length,
   });
   downloadChangelog(changelog, state.cycle);
   banner('', 'Update package generated',
@@ -400,6 +424,28 @@ function wireEvents() {
       const id = ack.dataset.flag;
       if (state.acked.has(id)) { unacknowledgeFlag(state.cycle, id); state.acked.delete(id); }
       else { acknowledgeFlag(state.cycle, id); state.acked.add(id); }
+      render();
+      return;
+    }
+    const accept = e.target.closest('.accept-suggestion');
+    if (accept) {
+      // The one place a suggestion turns into a category: an explicit human click.
+      assignCategory(accept.dataset.key, accept.dataset.display, accept.dataset.category);
+      return;
+    }
+    const flip = e.target.closest('.flip-spendtype');
+    if (flip) {
+      setSpendTypeOverride(flip.dataset.fp, flip.dataset.to);
+      recategorize();
+      render();
+      status(`Recorded as ${flip.dataset.to} for this charge only.`);
+      setTimeout(() => status(''), 4000);
+      return;
+    }
+    const resetSpend = e.target.closest('.reset-spendtype');
+    if (resetSpend) {
+      clearSpendTypeOverride(resetSpend.dataset.fp);
+      recategorize();
       render();
       return;
     }

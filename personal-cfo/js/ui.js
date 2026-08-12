@@ -32,6 +32,24 @@ const TYPE_LABEL = {
   'reviewed-excluded': 'Reviewed one-time items',
 };
 
+// Where a Business/Personal call came from. Always shown, so a card-wide default
+// reads as a default rather than as a decision somebody made about this charge.
+const SPEND_SOURCE = {
+  'account-default': { label: 'account default', title: 'Defaulted from the card this charge is on, not decided per charge' },
+  rule: { label: 'from lookup rule', title: 'Set by the merchant rule in the lookup table' },
+  imported: { label: 'from imported data', title: 'Came in with the row, from the master workbook or the statement' },
+  user: { label: 'set by you', title: 'You overrode this for this charge' },
+};
+
+function spendSource(t) {
+  if (t.spendTypeSource === 'statement') {
+    return t.source === 'workbook'
+      ? { label: 'from workbook', title: 'Recorded in the master workbook before this app saw it' }
+      : { label: 'from statement', title: 'Came in with the imported statement row' };
+  }
+  return SPEND_SOURCE[t.spendTypeSource];
+}
+
 /* --------------------------------------------------------------- overview */
 
 export function renderOverview(el, state) {
@@ -155,7 +173,7 @@ export function renderTransactions(el, state) {
           </tr>
         </thead>
         <tbody>
-          ${rows.length ? rows.slice(0, 500).map((t) => transactionRow(t, categories, state.reviewed)).join('')
+          ${rows.length ? rows.slice(0, 500).map((t) => transactionRow(t, categories, state.reviewed, state.suggestions)).join('')
     : '<tr><td colspan="7"><div class="empty">No transactions match these filters.</div></td></tr>'}
         </tbody>
       </table>
@@ -163,9 +181,10 @@ export function renderTransactions(el, state) {
     ${rows.length > 500 ? `<p class="hint" style="margin-top:10px">Showing the first 500 of ${rows.length.toLocaleString()}. Narrow the filters to see the rest.</p>` : ''}`;
 }
 
-function transactionRow(t, categories, reviewed) {
+function transactionRow(t, categories, reviewed, suggestions) {
   const unmapped = t.unmapped;
   const isReviewed = reviewed?.has(t.fingerprint);
+  const suggestion = unmapped ? suggestions?.get(t.fingerprint) : null;
   return `
     <tr class="${unmapped ? 'row-unmapped' : ''} ${isReviewed ? 'row-reviewed' : ''}">
       <td class="nowrap">${esc(t.date)}</td>
@@ -176,14 +195,32 @@ function transactionRow(t, categories, reviewed) {
       <td>
         ${unmapped
     ? `<span class="badge badge-unmapped">Unmapped</span>
+           ${suggestion ? `
+             <div class="suggestion">
+               <button class="btn btn-sm accept-suggestion"
+                 data-key="${esc(t.merchantKey)}" data-display="${esc(t.merchant)}" data-category="${esc(suggestion.category)}">
+                 Accept: ${esc(suggestion.category)}
+               </button>
+               <span class="why">${esc(suggestion.evidence)}</span>
+               ${suggestion.caution ? `<span class="why caution">${esc(suggestion.caution)}</span>` : ''}
+             </div>` : ''}
            <select class="btn-sm assign-category" data-key="${esc(t.merchantKey)}" data-display="${esc(t.merchant)}" style="margin-top:6px">
-             <option value="">Assign category…</option>
+             <option value="">${suggestion ? 'Or choose another…' : 'Assign category…'}</option>
              ${categories.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
            </select>`
     : `${esc(t.category)}${t.recurringType === 'subscription' ? ' <span class="badge badge-sub">sub</span>' : ''}`}
       </td>
       <td class="nowrap">${esc(t.accountName)}</td>
-      <td class="nowrap muted">${esc(t.spendType || '')}</td>
+      <td class="nowrap spendtype">
+        ${esc(t.spendType || '—')}
+        ${spendSource(t)
+    ? `<span class="why" title="${esc(spendSource(t).title)}">${esc(spendSource(t).label)}</span>` : ''}
+        ${t.spendType ? `<button class="btn btn-sm flip-spendtype" data-fp="${esc(t.fingerprint)}"
+             data-to="${t.spendType === 'Business' ? 'Personal' : 'Business'}"
+             title="Record this charge as ${t.spendType === 'Business' ? 'Personal' : 'Business'} instead">
+             → ${t.spendType === 'Business' ? 'Personal' : 'Business'}</button>` : ''}
+        ${t.spendTypeSource === 'user' ? `<button class="btn btn-sm reset-spendtype" data-fp="${esc(t.fingerprint)}" title="Go back to the account default">reset</button>` : ''}
+      </td>
       <td class="num nowrap" style="${t.flow === 'Income' ? 'color:#4ec44e' : ''}">
         ${t.flow === 'Income' ? '+' : ''}${money(t.amount, 2)}
       </td>
@@ -266,6 +303,12 @@ function flagCard(flag, isAcked, categories) {
           </ul>` : ''}
         ${flag.type === 'unmapped-merchant' ? `
           <div class="fix">
+            ${flag.suggestion ? `
+              <button class="btn btn-sm accept-suggestion"
+                data-key="${esc(flag.merchantKey)}" data-display="${esc(flag.subject)}" data-category="${esc(flag.suggestion.category)}">
+                Accept: ${esc(flag.suggestion.category)}
+              </button>
+              <span class="why">${esc(flag.suggestion.evidence)}</span>` : ''}
             <span class="hint">Map <code>${esc(flag.suggestedPattern)}</code> to:</span>
             <select class="btn-sm assign-category" data-key="${esc(flag.merchantKey)}" data-display="${esc(flag.subject)}">
               <option value="">Choose a category…</option>

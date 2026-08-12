@@ -24,9 +24,58 @@ export function clean(desc) {
   return d;
 }
 
-/** Alnum-only signature; collapses spacing variants of the same merchant. */
+/**
+ * Alnum-only signature; collapses spacing variants of the same merchant.
+ *
+ * This is the *matching* key and is deliberately left alone. Several lookup
+ * rules key on payment-channel words on purpose ("ONLINEBANKINGPAYMENT",
+ * "ETRANSFER" and "AUTOMATICPAYMENT" all map to Transfers), so stripping that
+ * noise here would silently un-categorise transactions that are correct today.
+ * The aggressive cleanup lives in displayText() instead, where it affects what a
+ * human reads rather than what the rules match.
+ */
 export function signature(desc) {
   return clean(desc).replace(/[^A-Z0-9]/g, '');
+}
+
+// Payment-channel words that describe *how* money moved, not who was paid.
+const CHANNEL_PREFIX = new RegExp(
+  '^(?:'
+  + 'CONTACTLESS\\s*INTERAC\\s*PURCHASE|INTERAC\\s*PURCHASE|POINT\\s*OF\\s*SALE\\s*PURCHASE'
+  + '|MISC\\s*PAYMENT|BILL\\s*PAYMENT|AUTO\\s*PAYMENT|ONLINE\\s*BANKING\\s*PAYMENT'
+  + '|UTILITY\\s*BILL\\s*PMT|BUSINESS\\s*PAD|FEES?\\s*/\\s*DUES|EQUIPMENT\\s*RENT'
+  + '|PREAUTHORIZED\\s*DEBIT'
+  + ')\\s*-?\\s*\\d*\\s*', 'i',
+);
+
+// Processors that prefix the real merchant name. The separator is required, so
+// "SQUARE INC" (a merchant in its own right) survives while "SQ *SNOWBERRY"
+// gives up its prefix.
+const PROCESSOR = /\b(?:SQ|TST|SP|PAYPAL|AMZN|EBAY\s*O|ABC|NBX|PTI|RMI|LS|HM|PADDLE\.NET|SPORTPY)\s*[*-]\s*/gi;
+
+/**
+ * The merchant name as a person would write it: channel words, processor
+ * prefixes, store numbers and repeated town names removed.
+ *
+ * Used for display and for reading the name semantically. Never used for rule
+ * matching — see signature().
+ */
+export function displayText(desc) {
+  let d = clean(desc);
+  for (let i = 0; i < 3; i += 1) d = d.replace(CHANNEL_PREFIX, '').trim();
+  d = d.replace(PROCESSOR, ' ');
+  d = d.replace(/\s*#\s*\d+/g, ' ');
+  d = d.replace(/\b\d{3,}\b/g, ' ');
+  d = d.replace(/\s+/g, ' ').trim();
+  // Collapse a town repeated at the end ("MARC'S YIG ERIN ERIN").
+  const words = d.split(' ');
+  if (words.length > 1 && words.at(-1) === words.at(-2)) words.pop();
+  return words.join(' ');
+}
+
+/** Human-readable merchant name. */
+export function displayName(desc) {
+  return titleCase(displayText(desc)) || String(desc || '').trim();
 }
 
 /**
@@ -83,10 +132,11 @@ export function categorize(txn, index, account) {
   if (!rule) {
     return {
       ...txn,
-      merchant: titleCase(clean(txn.description)) || txn.description,
+      merchant: displayName(txn.description),
       merchantKey: signature(txn.description),
       category: txn.flow === 'Income' ? 'Income' : UNMAPPED,
       spendType: txn.spendType || account?.defaultSpendType || null,
+      spendTypeSource: txn.spendType ? 'statement' : (account?.defaultSpendType ? 'account-default' : null),
       person: txn.person || account?.person || null,
       isSubscription: false,
       recurringType: null,
@@ -100,6 +150,9 @@ export function categorize(txn, index, account) {
     merchantKey: rule.pattern,
     category: rule.category,
     spendType: rule.spendType || txn.spendType || account?.defaultSpendType || null,
+    // Where the Business/Personal call came from, so an account-wide default is
+    // visible as a default rather than looking like a decision someone made.
+    spendTypeSource: rule.spendType ? 'rule' : (txn.spendType ? 'statement' : (account?.defaultSpendType ? 'account-default' : null)),
     person: rule.person || txn.person || account?.person || null,
     isSubscription: Boolean(rule.isSubscription),
     // 'subscription' | 'bill' | null. Only true subscriptions feed the

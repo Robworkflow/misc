@@ -26,7 +26,7 @@ function download(blob, filename) {
  * Build the updated workbook: full transaction register, the merchant lookup
  * table as it now stands, this cycle's flags, and the subscription view.
  */
-export function buildUpdatePackage({ transactions, flags, subscriptions, bills, coverage, cycle, merchantRules, newTransactions, reviewed = new Set() }, XLSX) {
+export function buildUpdatePackage({ transactions, flags, subscriptions, bills, coverage, cycle, merchantRules, newTransactions, reviewed = new Set(), suggestions = new Map() }, XLSX) {
   const wb = XLSX.utils.book_new();
 
   const txnRows = transactions
@@ -45,6 +45,13 @@ export function buildUpdatePackage({ transactions, flags, subscriptions, bills, 
       'Card Holder': t.cardHolder || '',
       Person: t.person || '',
       'Spend Type': t.spendType || '',
+      // Where Business/Personal came from, so a card-wide default is never
+      // mistaken for a per-charge decision.
+      'Spend Type Source': t.spendTypeSource || '',
+      // A suggestion is not a category. It is recorded here as a pending
+      // proposal so the workbook shows what is still awaiting a human.
+      'Suggested Category': t.unmapped ? (suggestions.get(t.fingerprint)?.category || '') : '',
+      'Suggestion Evidence': t.unmapped ? (suggestions.get(t.fingerprint)?.evidence || '') : '',
       Month: monthOf(t.date),
       Year: Number(String(t.date).slice(0, 4)),
       Source: t.source,
@@ -135,7 +142,7 @@ function subRow(s) {
 }
 
 /** Human-readable changelog describing exactly what this cycle changed. */
-export function buildChangelog({ cycle, flags, newTransactions, ingested, coverage, corrections, heldOut }) {
+export function buildChangelog({ cycle, flags, newTransactions, ingested, coverage, corrections, heldOut, pendingSuggestions = 0 }) {
   const lines = [];
   const rule = '='.repeat(64);
   lines.push(rule, `PERSONAL CFO — CYCLE ${cycle}`, `Generated ${new Date().toLocaleString('en-CA')}`, rule, '');
@@ -157,6 +164,13 @@ export function buildChangelog({ cycle, flags, newTransactions, ingested, covera
 
   lines.push(`NEW TRANSACTIONS: ${newTransactions?.length || 0}`);
   lines.push('');
+
+  if (pendingSuggestions) {
+    lines.push(`SUGGESTIONS AWAITING A HUMAN: ${pendingSuggestions}`);
+    lines.push('  Proposed categories, shown with their evidence in the app. None of them');
+    lines.push('  have been applied — a suggestion only becomes a category when accepted.');
+    lines.push('');
+  }
 
   if (heldOut?.length) {
     lines.push('REVIEWED ONE-TIME ITEMS (in the totals, held out of comparisons)');
